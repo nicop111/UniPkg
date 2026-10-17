@@ -562,9 +562,6 @@ class FlatpakBackend(Backend):
             cmds.append(Command("Remove permission overrides",
                                 ["flatpak", "override", "--user", "--reset", pkg.name],
                                 allow_failure=True))
-        cmds.append(Command("Remove unused runtimes",
-                            ["flatpak", "uninstall", inst_flag(inst), "--unused", "-y",
-                             "--noninteractive"], allow_failure=True))
         return cmds
 
     def data_locations(self, pkg: Package) -> list[str]:

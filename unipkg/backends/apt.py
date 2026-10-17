@@ -411,6 +411,8 @@ done
 
     def enrich(self, result: SearchResult) -> None:
         """Compute download/installed size including missing dependencies."""
+        if result.installed:
+            return
         res = host.run(["apt-get", "install", "--print-uris", "-y", result.name], timeout=60)
         for line in res.stdout.splitlines():
             m = re.match(r"^Need to get ([\d.,]+ \w+)", line)
