@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import re
+import time
+from email.utils import parsedate_to_datetime
+from typing import Optional
 
 _UNITS = {
     "b": 1,
@@ -95,3 +99,47 @@ def parse_deb822(text: str) -> list[dict[str, str]]:
     if current:
         stanzas.append(current)
     return stanzas
+
+
+def parse_date(text: str) -> Optional[float]:
+    """Parse ISO 8601 (snapd), ``2026-10-09 17:39:24 +0000`` (flatpak) and
+    RFC 2822 (Debian changelog) dates to epoch seconds."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    iso = re.match(r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})(\.\d+)?\s*(Z|[+-]\d{2}:?\d{2})?$", text)
+    if iso:
+        frac = (iso.group(3) or "")[:7]  # Python accepts at most microseconds
+        tz = iso.group(4) or "+00:00"
+        tz = "+00:00" if tz == "Z" else (tz if ":" in tz else f"{tz[:3]}:{tz[3:]}")
+        try:
+            return _dt.datetime.fromisoformat(f"{iso.group(1)}T{iso.group(2)}{frac}{tz}").timestamp()
+        except ValueError:
+            return None
+    try:
+        return parsedate_to_datetime(text).timestamp()
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
+def format_date(epoch: Optional[float], now: Optional[float] = None) -> str:
+    """Short, human friendly date: "Today", "Yesterday", "3 days ago" or "12 Oct 2026"."""
+    if not epoch:
+        return "—"
+    now = now or time.time()
+    day = _dt.date.fromtimestamp(epoch)
+    today = _dt.date.fromtimestamp(now)
+    delta = (today - day).days
+    if delta == 0:
+        return "Today"
+    if delta == 1:
+        return "Yesterday"
+    if 1 < delta < 7:
+        return f"{delta} days ago"
+    return f"{day.day} {day.strftime('%b %Y')}"
+
+
+def format_datetime(epoch: Optional[float]) -> str:
+    if not epoch:
+        return "Unknown"
+    return _dt.datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M")

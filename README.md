@@ -11,7 +11,7 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
 
 ## Features
 
-- **Installed list**: one sortable, filterable list of everything on the system. You can sort by name, developer, package type, source, permissions and size, either from the "Sort by" menu or by clicking a column header. You can filter by text, package type, scope (applications, manually installed, or all packages), source/repository and permission (network, files, camera, sound, notifications, devices, background, location, unrestricted, sandboxed).
+- **Installed list**: one sortable, filterable list of everything on the system. You can sort by name, developer, package type, source, permissions, size and **last updated**, either from the "Sort by" menu or by clicking a column header. You can filter by text, package type, scope (applications, manually installed, or all packages), source/repository and permission (network, files, camera, sound, notifications, devices, background, location, unrestricted, sandboxed).
 - **Permissions**
   - Flatpak: network, display sockets, sound, devices, Bluetooth, file system locations, D-Bus names and more. Changes are written as per-user overrides (`flatpak override --user`), and **Reset** removes them. Notifications, background, camera and location use the portal permission store (`flatpak permission-set`).
   - Snap: connect or disconnect each interface plug (`snap connect` / `snap disconnect`).
@@ -23,6 +23,10 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
   - sandboxing and permissions
   - license and how it gets updates
   - signature verification
+
+  It also shows each format's **latest release** date (Flatpak commit date, the Snap channel's release date, or the top entry of the APT changelog) and, for formats already installed, when they were last updated **on this computer**.
+
+  "Last updated" in the installed list means the last install or update on this computer: dpkg's file list timestamp, the Flatpak deployment time, or snapd's install date.
 
   The best size is highlighted, and the most sandboxed, best-verified format is recommended.
 - **Install from file**: `.deb`, `.snap`, `.flatpakref` and `.flatpak` files. Before a `.deb` is installed, its SHA-256 is checked against the signed repository index.

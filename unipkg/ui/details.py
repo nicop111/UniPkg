@@ -8,7 +8,7 @@ from gi.repository import Adw, GLib, Gtk, Pango
 
 from .. import host
 from ..models import Package, PackageKind, Permission, PermissionCategory, Verification
-from ..util import format_size
+from ..util import format_date, format_datetime, format_size
 from .common import ICONS, dim_label, error_dialog, kind_badge, run_async, trust_badge
 from .operation import run_operation
 from .running_check import update_with_running_check
@@ -90,6 +90,8 @@ class PackageDetailsDialog(Adw.Dialog):
             ("Type", pkg.kind.label),
             ("Source", pkg.source),
             ("Installed size", format_size(pkg.size)),
+            ("Last updated", f"{format_datetime(pkg.updated)} ({format_date(pkg.updated)})"
+             if pkg.updated else ""),
             ("Sandbox", pkg.confinement),
         ]
         if pkg.kind == PackageKind.FLATPAK:

@@ -7,7 +7,7 @@ from typing import Callable, Optional
 from gi.repository import Adw, Gio, GObject, Gtk, Pango
 
 from ..models import Package, PackageKind, PermissionCategory, Trust
-from ..util import format_size
+from ..util import format_date, format_datetime, format_size
 from .common import ICONS, dim_label
 
 SCOPES = [
@@ -42,6 +42,7 @@ SORT_KEYS = [
     ("source", "Source"),
     ("permissions", "Permissions"),
     ("size", "Size"),
+    ("updated", "Last updated"),
 ]
 
 
@@ -70,6 +71,8 @@ def _sort_value(pkg: Package, key: str):
         return pkg.risk_score
     if key == "size":
         return pkg.size
+    if key == "updated":
+        return pkg.updated or 0.0
     if key == "version":
         return pkg.version
     if key == "trust":
@@ -163,14 +166,15 @@ class InstalledPage(Gtk.Box):
         self.view.connect("activate", self._on_row_activate)
         self.sort_model.set_sorter(self.view.get_sorter())
         self.columns: dict[str, Gtk.ColumnViewColumn] = {}
-        self._add_column("name", "Name", self._setup_name, self._bind_name, expand=True)
+        self._add_column("name", "Name", self._setup_name, self._bind_name, expand=True, fixed=240)
         self._add_column("developer", "Developer", self._setup_label, self._bind_text(lambda p: p.developer),
-                         fixed=170)
-        self._add_column("kind", "Type", self._setup_badge, self._bind_badge, fixed=110)
-        self._add_column("source", "Source", self._setup_label, self._bind_text(lambda p: p.source), fixed=180)
-        self._add_column("permissions", "Permissions", self._setup_perm, self._bind_perm, fixed=200)
+                         fixed=150)
+        self._add_column("kind", "Type", self._setup_badge, self._bind_badge, fixed=100)
+        self._add_column("source", "Source", self._setup_label, self._bind_text(lambda p: p.source), fixed=160)
+        self._add_column("permissions", "Permissions", self._setup_perm, self._bind_perm, fixed=180)
         self._add_column("size", "Size", self._setup_label_right,
                          self._bind_text(lambda p: format_size(p.size)), fixed=90)
+        self._add_column("updated", "Updated", self._setup_label, self._bind_updated, fixed=100)
         self._add_column("version", "Version", self._setup_label,
                          self._bind_text(lambda p: p.version), fixed=130)
 
@@ -257,6 +261,13 @@ class InstalledPage(Gtk.Box):
             item.get_child().set_tooltip_text(text)
 
         return bind
+
+    def _bind_updated(self, _f, item):
+        pkg: Package = item.get_item().pkg
+        label = item.get_child()
+        label.set_label(format_date(pkg.updated))
+        label.set_tooltip_text(f"Installed or last updated on this computer: {format_datetime(pkg.updated)}"
+                               if pkg.updated else "Unknown")
 
     def _setup_badge(self, _f, item):
         label = Gtk.Label(halign=Gtk.Align.START, valign=Gtk.Align.CENTER)
@@ -362,8 +373,12 @@ class InstalledPage(Gtk.Box):
         self.permission = PERMISSION_FILTERS[dd.get_selected()][0]
         self._refilter()
 
-    def _on_sort_choice(self, *_args):
+    def _on_sort_choice(self, widget=None, *_args):
         key = SORT_KEYS[self.sort_dd.get_selected()][0]
+        if widget is self.sort_dd and key == "updated" and not self.sort_dir_btn.get_active():
+            # Most recently updated first is what one usually wants.
+            self.sort_dir_btn.set_active(True)  # re-enters this handler
+            return
         descending = self.sort_dir_btn.get_active()
         self.sort_dir_btn.set_icon_name("view-sort-descending-symbolic" if descending
                                         else "view-sort-ascending-symbolic")

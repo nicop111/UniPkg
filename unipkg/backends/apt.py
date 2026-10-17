@@ -25,7 +25,7 @@ from ..models import (
     Verification,
     VerificationCheck,
 )
-from ..util import parse_deb822, parse_size
+from ..util import parse_date, parse_deb822, parse_size
 from .base import Backend, BackendError, Command
 from .gpg import KeyInfo, key_data_keys, keyring_keys
 
@@ -302,6 +302,7 @@ class AptBackend(Backend):
         apt_list = parse_apt_list(host.run(["apt", "list", "--installed"], timeout=120).stdout)
         origins = parse_policy_origins(host.run(["apt-cache", "policy"], timeout=60).stdout)
         desktop = self._desktop_entries()
+        updated = self._install_times()
 
         packages: list[Package] = []
         for line in dpkg.stdout.splitlines():
@@ -338,8 +339,23 @@ class AptBackend(Backend):
                        "suites": suites, "package": name,
                        "desktop_file": (entry or {}).get("_file", "")},
             )
+            pkg.updated = updated.get(f"{name}:{arch}") or updated.get(name)
             packages.append(pkg)
         return packages
+
+    def _install_times(self) -> dict[str, float]:
+        """When each package was last installed or upgraded.
+
+        dpkg rewrites ``/var/lib/dpkg/info/<pkg>[:<arch>].list`` whenever the
+        package is unpacked, so its mtime is the last install/upgrade time.
+        """
+        res = host.run_shell("cd /var/lib/dpkg/info && stat -c '%Y %n' -- *.list", timeout=60)
+        times: dict[str, float] = {}
+        for line in res.stdout.splitlines():
+            stamp, _, fname = line.partition(" ")
+            if stamp.isdigit() and fname.endswith(".list"):
+                times[fname[:-5]] = float(stamp)
+        return times
 
     @property
     def native_arch(self) -> str:
@@ -431,6 +447,7 @@ done
 
     def enrich(self, result: SearchResult) -> None:
         """Compute download/installed size including missing dependencies."""
+        result.released = self.changelog_date(result.name)
         if result.installed:
             return
         res = host.run(["apt-get", "install", "--print-uris", "-y", result.name], timeout=60)
@@ -518,6 +535,17 @@ done
             return msg
 
         return check
+
+    def changelog_date(self, name: str) -> Optional[float]:
+        """Release date of the candidate version (top entry of its changelog).
+
+        ``apt-get changelog`` downloads the changelog from the distribution
+        (works for Debian/Ubuntu archives, usually not for third-party repos).
+        """
+        res = host.run(["sh", "-c", f"apt-get changelog {shlex.quote(name)} 2>/dev/null | "
+                                    "sed -n '/^ -- /{p;q}'"], timeout=30)
+        m = re.match(r"^\s*-- .*?>\s+(.+)$", res.stdout.strip())
+        return parse_date(m.group(1)) if m else None
 
     def install(self, result: SearchResult) -> list[Command]:
         return [Command(f"Install {result.name} (APT)",

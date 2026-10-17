@@ -9,7 +9,7 @@ from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from .. import host
 from ..models import PackageKind, SearchResult, Trust, Verification
-from ..util import format_size
+from ..util import format_date, format_datetime, format_size
 from .common import ICONS, dim_label, error_dialog, kind_badge, run_async, trust_badge
 from .operation import run_operation
 
@@ -171,6 +171,11 @@ class ExplorePage(Gtk.Box):
         install_local_file(self, self.manager, path)
 
 
+def _lower_relative(text: str) -> str:
+    """"Today" -> "today", but keep dates like "24 Sep 2026" unchanged."""
+    return text if text[:1].isdigit() else text[:1].lower() + text[1:]
+
+
 class _IconProxy:
     """Lets the icon loader pick the best icon of a group of results."""
 
@@ -191,6 +196,9 @@ class CompareDialog(Adw.Dialog):
 
     ROWS = [
         ("Version", lambda r: r.version or "—"),
+        ("Latest release", lambda r: format_date(r.released) if r.released else
+         ("Loading…" if not r.extra.get("enriched") else "Unknown")),
+        ("On this computer", lambda r: r.extra.get("installed_note", "Not installed")),
         ("Download size", lambda r: format_size(r.download_size)),
         ("Installed size", lambda r: format_size(r.installed_size)),
         ("Developer", lambda r: r.developer or "—"),
@@ -210,6 +218,13 @@ class CompareDialog(Adw.Dialog):
                          content_width=min(1100, 360 + 280 * len(items)), content_height=760)
         self.manager = manager
         self.items = items
+        for item in items:
+            installed = (manager.find_installed(item.kind, item.name)
+                         or (item.kind == PackageKind.APT and manager.find_installed(PackageKind.DEB, item.name)))
+            if installed:
+                item.extra["installed_note"] = (
+                    f"Installed {installed.version}, updated {_lower_relative(format_date(installed.updated))}"
+                    if installed.updated else f"Installed {installed.version}")
         self._labels: dict[tuple[int, str], Gtk.Label] = {}
         self._trust_boxes: dict[int, Gtk.Box] = {}
 
@@ -306,7 +321,10 @@ class CompareDialog(Adw.Dialog):
         backend = self.manager.backend_for(item.kind)
         if backend is None:
             return None
-        backend.enrich(item)
+        try:
+            backend.enrich(item)
+        finally:
+            item.extra["enriched"] = True
         try:
             return backend.verify_search_result(item)
         except Exception:  # noqa: BLE001
@@ -337,6 +355,16 @@ class CompareDialog(Adw.Dialog):
             self.verify_group.add(exp)
 
     def _highlight_best(self) -> None:
+        released = [(i.released, col) for col, i in enumerate(self.items, 1) if i.released]
+        for col in range(1, len(self.items) + 1):
+            label = self._labels[(col, "Latest release")]
+            label.remove_css_class("best-value")
+            item = self.items[col - 1]
+            label.set_tooltip_text(
+                format_datetime(item.released)
+                if item.released else None)
+        if len(released) > 1:
+            self._labels[(max(released)[1], "Latest release")].add_css_class("best-value")
         for title_text, attr in (("Download size", "download_size"), ("Installed size", "installed_size")):
             values = [(getattr(i, attr), col) for col, i in enumerate(self.items, 1) if getattr(i, attr)]
             for col in range(1, len(self.items) + 1):

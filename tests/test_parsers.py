@@ -29,6 +29,27 @@ class UtilTests(unittest.TestCase):
         self.assertEqual(format_size(999), "999 B")
         self.assertEqual(format_size(1_400_000), "1.4 MB")
 
+    def test_parse_date(self):
+        from unipkg.util import parse_date
+
+        expected = 1767352442.0  # 2026-01-02 11:14:02 UTC
+        self.assertEqual(parse_date("Fri, 02 Jan 2026 12:14:02 +0100"), expected)  # changelog
+        self.assertEqual(parse_date("2026-01-02 11:14:02 +0000"), expected)  # flatpak
+        self.assertAlmostEqual(parse_date("2026-01-02T12:14:02.922672763+01:00"), expected + 0.922672, 3)
+        self.assertEqual(parse_date("2026-01-02T11:14:02Z"), expected)  # snap store
+        self.assertIsNone(parse_date("not a date"))
+        self.assertIsNone(parse_date(""))
+
+    def test_format_date(self):
+        from unipkg.util import format_date
+
+        now = 1767352442.0
+        self.assertEqual(format_date(now, now), "Today")
+        self.assertEqual(format_date(now - 86400, now), "Yesterday")
+        self.assertEqual(format_date(now - 3 * 86400, now), "3 days ago")
+        self.assertIn("2025", format_date(now - 40 * 86400, now))
+        self.assertEqual(format_date(None), "—")
+
     def test_deb822_continuation(self):
         stanzas = parse_deb822("Package: a\nDescription: x\n more\n\nPackage: b\n")
         self.assertEqual(len(stanzas), 2)

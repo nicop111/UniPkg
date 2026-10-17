@@ -22,7 +22,7 @@ from ..models import (
     Verification,
     VerificationCheck,
 )
-from ..util import parse_keyfile, parse_size, split_list
+from ..util import parse_date, parse_keyfile, parse_size, split_list
 from .base import Backend, BackendError, Command
 from .gpg import describe_keyring
 
@@ -382,6 +382,13 @@ class FlatpakBackend(Backend):
             script_parts.append(
                 f'echo "@@OVR user {pkg.name}"; cat "{USER_DIR_EXPR}/overrides/"{app} 2>/dev/null;'
             )
+        for pkg in packages:
+            inst = pkg.extra["installation"]
+            base = SYSTEM_DIR if inst == "system" else USER_DIR_EXPR
+            # The deploy file is written when this version was installed/updated.
+            script_parts.append(
+                f'echo "@@DEPLOY {inst} {pkg.name}"; '
+                f'stat -c %Y "{base}/app/"{shlex.quote(pkg.name)}"/current/active/deploy" 2>/dev/null;')
         script_parts.append(f'echo "@@GLOBAL system"; cat "{SYSTEM_DIR}/overrides/global" 2>/dev/null;')
         script_parts.append(f'echo "@@GLOBAL user"; cat "{USER_DIR_EXPR}/overrides/global" 2>/dev/null;')
         for table in ("notifications", "background", "devices", "location"):
@@ -410,6 +417,8 @@ class FlatpakBackend(Backend):
                 portal[key] = store.get(table, {}).get(pkg.name, {}).get(ident)
             pkg.permissions = build_permissions(state, portal)
             pkg.extra["runtime"] = meta.get("Application", {}).get("runtime", "")
+            deployed = sections.get(("DEPLOY", (inst, pkg.name)), "").strip()
+            pkg.updated = float(deployed) if deployed.isdigit() else None
 
             info = self.appstream_lookup(pkg.name, pkg.source, inst)
             if info:
@@ -524,6 +533,8 @@ class FlatpakBackend(Backend):
                 result.extra["commit"] = value
             elif key == "License":
                 result.extra["license"] = value
+            elif key == "Date":
+                result.released = parse_date(value)
         meta = host.run(["flatpak", "remote-info", "--show-metadata", inst_flag(inst),
                          result.extra["remote"], result.name], timeout=60)
         if meta.ok:

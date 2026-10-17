@@ -22,7 +22,7 @@ from ..models import (
     Verification,
     VerificationCheck,
 )
-from ..util import parse_deb822
+from ..util import parse_date, parse_deb822
 from .base import Backend, BackendError, Command
 
 SOCKET = "/run/snapd.socket"
@@ -179,6 +179,7 @@ class SnapBackend(Backend):
                        "publisher_username": publisher.get("username", ""),
                        "license": snap.get("license", "")},
             )
+            pkg.updated = parse_date(snap.get("install-date", ""))
             if snap.get("icon", "").startswith("/v2/icons"):
                 pkg.extra["icon_api"] = snap["icon"]
             packages.append(pkg)
@@ -253,6 +254,17 @@ class SnapBackend(Backend):
                        "common_ids": snap.get("common-ids", [])},
             ))
         return out
+
+    def enrich(self, result: SearchResult) -> None:
+        """Look up when the version on the tracked channel was released."""
+        data = api(f"/v2/find?name={urllib.parse.quote(result.name)}")
+        found = data.get("result")
+        if not isinstance(found, list) or not found:
+            return
+        channels = found[0].get("channels") or {}
+        channel = found[0].get("channel") or "stable"
+        info = channels.get(channel if "/" in channel else f"latest/{channel}") or {}
+        result.released = parse_date(info.get("released-at", ""))
 
     def install(self, result: SearchResult) -> list[Command]:
         argv = ["snap", "install", result.name]

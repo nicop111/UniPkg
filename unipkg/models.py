@@ -150,6 +150,7 @@ class Package:
     permissions: list[Permission] = field(default_factory=list)
     confinement: str = ""  # human readable sandbox status
     trust: Trust = Trust.UNKNOWN
+    updated: Optional[float] = None  # when it was last installed/updated here (epoch seconds)
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -222,6 +223,7 @@ class SearchResult:
     confinement: str = ""
     installed: bool = False
     icon_name: Optional[str] = None
+    released: Optional[float] = None  # publication date of this version (epoch seconds)
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
