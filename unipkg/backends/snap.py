@@ -23,7 +23,7 @@ from ..models import (
     VerificationCheck,
 )
 from ..util import parse_date, parse_deb822
-from .base import Backend, BackendError, Command
+from .base import Backend, BackendError, Command, guard_protected
 
 SOCKET = "/run/snapd.socket"
 
@@ -180,6 +180,12 @@ class SnapBackend(Backend):
                        "license": snap.get("license", "")},
             )
             pkg.updated = parse_date(snap.get("install-date", ""))
+            if snap.get("type") in ("base", "os", "core", "kernel", "gadget", "snapd"):
+                pkg.extra["protected"] = {
+                    "snapd": "The snap system itself",
+                    "kernel": "Kernel snap",
+                    "gadget": "Device gadget snap",
+                }.get(snap.get("type"), "Base snap other snaps run on")
             if snap.get("icon", "").startswith("/v2/icons"):
                 pkg.extra["icon_api"] = snap["icon"]
             packages.append(pkg)
@@ -277,6 +283,7 @@ class SnapBackend(Backend):
                         host.privileged(["snap", "install", "--dangerous", host_path]))]
 
     def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        guard_protected(pkgs)
         argv = ["snap", "remove", *(["--purge"] if delete_data else []), *[p.name for p in pkgs]]
         cmds = [Command(f"Remove {', '.join(p.display_name for p in pkgs)}", host.privileged(argv))]
         if delete_data:

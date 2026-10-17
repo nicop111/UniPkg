@@ -479,18 +479,29 @@ class InstalledPage(Gtk.Box):
         check = Gtk.CheckButton(halign=Gtk.Align.CENTER, tooltip_text="Select for bulk uninstall")
         check._uid = None  # type: ignore[attr-defined]
         check.connect("toggled", self._on_check_toggled)
-        item.set_child(check)
+        lock = Gtk.Image.new_from_icon_name("system-lock-screen-symbolic")
+        lock.add_css_class("dim-label")
+        box = Gtk.Box(halign=Gtk.Align.CENTER)
+        box.append(check)
+        box.append(lock)
+        box._parts = (check, lock)  # type: ignore[attr-defined]
+        item.set_child(box)
 
     def _bind_check(self, _f, item):
-        check = item.get_child()
-        check._uid = item.get_item().pkg.uid
+        check, lock = item.get_child()._parts
+        pkg = item.get_item().pkg
+        reason = pkg.extra.get("protected")
+        check.set_visible(not reason)
+        lock.set_visible(bool(reason))
+        lock.set_tooltip_text(f"Protected system component: {reason}" if reason else None)
+        check._uid = None if reason else pkg.uid
         check.handler_block_by_func(self._on_check_toggled)
         check.set_active(check._uid in self.selection)
         check.handler_unblock_by_func(self._on_check_toggled)
         self._bound_checks.add(check)
 
     def _unbind_check(self, _f, item):
-        self._bound_checks.discard(item.get_child())
+        self._bound_checks.discard(item.get_child()._parts[0])
 
     def _on_check_toggled(self, check):
         if check._uid:
@@ -505,7 +516,9 @@ class InstalledPage(Gtk.Box):
                 check.handler_unblock_by_func(self._on_check_toggled)
 
     def select_all_visible(self) -> None:
-        uids = {self.filter_model.get_item(i).pkg.uid for i in range(self.filter_model.get_n_items())}
+        uids = {pkg.uid for pkg in (self.filter_model.get_item(i).pkg
+                                    for i in range(self.filter_model.get_n_items()))
+                if not pkg.extra.get("protected")}
         self.selection.replace(self.selection.uids | uids)
 
     def uninstall_selected(self) -> None:

@@ -486,3 +486,30 @@ class ObsoletePackageTests(unittest.TestCase):
         self.assertEqual(risk.assess(current_lib).factors, [])  # OS libraries are not flagged
         self.assertEqual(len(risk.assess_all([lib, current_lib], set())), 0)  # not apps
         self.assertEqual(len(risk.assess_all([lib, current_lib], set(), include_all=True)), 2)
+
+
+class ProtectionTests(unittest.TestCase):
+    def test_protection_reason(self):
+        self.assertIn("Essential", apt.protection_reason("coreutils", essential="yes"))
+        self.assertIn("Protected", apt.protection_reason("init", protected="yes"))
+        self.assertTrue(apt.protection_reason("gnome-shell"))
+        self.assertTrue(apt.protection_reason("ubuntu-desktop-minimal"))
+        self.assertIn("required", apt.protection_reason("libfoo", priority="required"))
+        self.assertIn("running", apt.protection_reason("linux-image-7.0.0-31-generic",
+                                                        running_kernel="7.0.0-31-generic"))
+        self.assertEqual(apt.protection_reason("linux-image-6.0.0-1-generic",
+                                               running_kernel="7.0.0-31-generic"), "")
+        self.assertEqual(apt.protection_reason("vlc", priority="optional"), "")
+
+    def test_backends_refuse_protected(self):
+        from unipkg.backends.base import BackendError
+        from unipkg.models import Package
+
+        shell = Package(kind=PackageKind.APT, name="gnome-shell", display_name="GNOME Shell",
+                        extra={"protected": "The desktop shell"})
+        core = Package(kind=PackageKind.SNAP, name="core22", display_name="core22",
+                       extra={"protected": "Base snap"})
+        with self.assertRaises(BackendError):
+            apt.AptBackend().uninstall_many([shell], False)
+        with self.assertRaises(BackendError):
+            snap.SnapBackend().uninstall(core, False)

@@ -84,3 +84,5 @@
 .risk-tile-low label.title-1 { color: @accent_color; }
 .risk-tile-none label.title-1 { color: @success_color; }
 .counter.counter-alert { background: alpha(@error_color, 0.25); color: @error_color; }
+
+.protected { color: alpha(currentColor, 0.7); }

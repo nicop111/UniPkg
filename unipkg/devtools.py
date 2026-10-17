@@ -117,6 +117,12 @@ def run_script(app, window) -> None:
             window.security.scope_dd.set_selected(int(arg))
         elif cmd == "secsearch":
             window.security.search.set_text(arg)
+        elif cmd == "uninstall":
+            from .ui.details import confirm_uninstall
+
+            pkg = next((p for p in window.manager.packages if p.name == arg), None)
+            if pkg:
+                confirm_uninstall(window, window.manager, pkg, False, None)
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:

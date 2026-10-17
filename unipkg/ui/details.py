@@ -72,11 +72,14 @@ class PackageDetailsDialog(Adw.Dialog):
             update_btn.add_css_class("pill")
             update_btn.connect("clicked", self._on_update)
             actions.append(update_btn)
-        remove_btn = Gtk.Button(label="Uninstall…")
-        remove_btn.add_css_class("destructive-action")
-        remove_btn.add_css_class("pill")
-        remove_btn.connect("clicked", lambda *_: self._confirm_uninstall(False))
-        actions.append(remove_btn)
+        if pkg.extra.get("protected"):
+            actions.append(protected_badge(pkg.extra["protected"], with_text=True))
+        else:
+            remove_btn = Gtk.Button(label="Uninstall…")
+            remove_btn.add_css_class("destructive-action")
+            remove_btn.add_css_class("pill")
+            remove_btn.connect("clicked", lambda *_: self._confirm_uninstall(False))
+            actions.append(remove_btn)
         group.add(actions)
         self.page.add(group)
 
@@ -318,10 +321,11 @@ class PackageDetailsDialog(Adw.Dialog):
         self.data_row = Adw.ActionRow(title="User data", subtitle="Looking for data folders…")
         self.data_row.add_prefix(Gtk.Image.new_from_icon_name("folder-symbolic"))
         group.add(self.data_row)
-        purge = Adw.ButtonRow(title="Uninstall and delete all data…")
-        purge.add_css_class("destructive-action")
-        purge.connect("activated", lambda *_: self._confirm_uninstall(True))
-        group.add(purge)
+        if not self.pkg.extra.get("protected"):
+            purge = Adw.ButtonRow(title="Uninstall and delete all data…")
+            purge.add_css_class("destructive-action")
+            purge.connect("activated", lambda *_: self._confirm_uninstall(True))
+            group.add(purge)
         self.page.add(group)
         run_async(lambda: self.backend.data_locations(self.pkg) if self.backend else [],
                   self._show_data, lambda e: self.data_row.set_subtitle(str(e)))
@@ -362,6 +366,9 @@ class PackageDetailsDialog(Adw.Dialog):
 def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bool, on_done,
                       on_closed=None) -> None:
     backend = manager.backend_for(pkg.kind)
+    if pkg.extra.get("protected"):
+        show_protected(parent, [pkg])
+        return
     dialog = Adw.AlertDialog(
         heading=f"Uninstall {pkg.display_name}?",
         body=("The application will be removed from this computer." if pkg.is_app
@@ -389,13 +396,23 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
     run_async(lambda: backend.data_locations(pkg), show_locations)
 
     if pkg.kind in (PackageKind.APT, PackageKind.DEB):
+        # Only allow the removal once apt confirmed it does not take critical packages along.
+        dialog.set_response_enabled("remove", False)
+        extra_label.set_label("Checking which packages would be removed…")
+
         def show_removals(names):
+            if _block_if_critical(dialog, extra_label, backend, names):
+                return
             others = [n for n in names if n != pkg.name.split(":")[0]]
+            extra_label.set_label(
+                f"⚠ This will also remove {len(others)} other package(s): " + ", ".join(others[:30])
+                if others else "")
             if others:
-                extra_label.set_label(
-                    f"⚠ This will also remove {len(others)} other package(s): " + ", ".join(others[:30]))
                 extra_label.add_css_class("warning")
-        run_async(lambda: backend.simulate_removal(pkg, delete_data), show_removals)
+            dialog.set_response_enabled("remove", True)
+
+        run_async(lambda: backend.simulate_removal(pkg, delete_data), show_removals,
+                  lambda exc: _check_failed(dialog, extra_label, exc))
 
         broken_label = Gtk.Label(xalign=0, wrap=True, visible=False)
         broken_label.add_css_class("caption")
@@ -413,7 +430,11 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
     def on_response(_d, response):
         if response != "remove":
             return
-        commands = backend.uninstall(pkg, check.get_active())
+        try:
+            commands = backend.uninstall(pkg, check.get_active())
+        except Exception as exc:  # noqa: BLE001 - e.g. refused protected packages
+            error_dialog(parent, "Cannot uninstall", exc)
+            return
         run_operation(parent, manager, f"Uninstalling {pkg.display_name}", commands, on_done,
                       auto_close=False, on_closed=on_closed)
 
@@ -424,7 +445,12 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
 
 def confirm_bulk_uninstall(parent: Gtk.Widget, manager, pkgs: list[Package], on_done=None) -> None:
     """Confirm and uninstall several packages, batched per package format."""
-    if len(pkgs) == 1:
+    protected = [p for p in pkgs if p.extra.get("protected")]
+    pkgs = [p for p in pkgs if not p.extra.get("protected")]
+    if not pkgs:
+        show_protected(parent, protected)
+        return
+    if len(pkgs) == 1 and not protected:
         confirm_uninstall(parent, manager, pkgs[0], False, on_done)
         return
     dialog = Adw.AlertDialog(heading=f"Uninstall {len(pkgs)} apps?",
@@ -447,29 +473,90 @@ def confirm_bulk_uninstall(parent: Gtk.Widget, manager, pkgs: list[Package], on_
     dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
     dialog.set_default_response("cancel")
 
+    if protected:
+        skipped = Gtk.Label(xalign=0, wrap=True, label="🔒 Skipped protected system components: "
+                            + ", ".join(p.display_name for p in protected))
+        skipped.add_css_class("caption")
+        skipped.add_css_class("dim-label")
+        box.append(skipped)
+
     debs = [p for p in pkgs if p.kind in (PackageKind.APT, PackageKind.DEB)]
     if debs and manager.apt:
         selected = {p.name.split(":")[0] for p in debs}
+        dialog.set_response_enabled("remove", False)
+        warn.set_label("Checking which packages would be removed…")
+        warn.set_visible(True)
 
         def show_removals(removed):
+            if _block_if_critical(dialog, warn, manager.apt, removed):
+                return
             others = [n for n in removed if n not in selected]
-            if others:
-                warn.set_label(f"⚠ APT will also remove {len(others)} other package(s): "
-                               + ", ".join(others[:30]))
-                warn.set_visible(True)
+            warn.set_label(f"⚠ APT will also remove {len(others)} other package(s): "
+                           + ", ".join(others[:30]) if others else "")
+            warn.set_visible(bool(others))
+            dialog.set_response_enabled("remove", True)
 
-        run_async(lambda: manager.apt.simulate_removal(debs, False), show_removals)
+        run_async(lambda: manager.apt.simulate_removal(debs, False), show_removals,
+                  lambda exc: _check_failed(dialog, warn, exc))
 
     def on_response(_d, response):
         if response != "remove":
             return
         commands = []
-        for backend in manager.backends:
-            group = [p for p in pkgs if p.kind in backend.kinds]
-            if group:
-                commands += backend.uninstall_many(group, check.get_active())
+        try:
+            for backend in manager.backends:
+                group = [p for p in pkgs if p.kind in backend.kinds]
+                if group:
+                    commands += backend.uninstall_many(group, check.get_active())
+        except Exception as exc:  # noqa: BLE001
+            error_dialog(parent, "Cannot uninstall", exc)
+            return
         run_operation(parent, manager, f"Uninstalling {len(pkgs)} apps", commands, on_done,
                       auto_close=False)
 
     dialog.connect("response", on_response)
     dialog.present(parent)
+
+
+# ---------------------------------------------------------------------------
+# Protection of critical system components
+# ---------------------------------------------------------------------------
+
+def protected_badge(reason: str, with_text: bool = False) -> Gtk.Widget:
+    box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER,
+                  tooltip_text=f"Protected system component: {reason}. It cannot be removed here.")
+    box.add_css_class("protected")
+    box.append(Gtk.Image.new_from_icon_name("system-lock-screen-symbolic"))
+    if with_text:
+        label = Gtk.Label(label=f"Protected system component — {reason}", wrap=True, xalign=0)
+        box.append(label)
+    return box
+
+
+def show_protected(parent: Gtk.Widget, pkgs: list[Package]) -> None:
+    lines = "\n".join(f"• {p.display_name}: {p.extra.get('protected')}" for p in pkgs)
+    error_dialog(parent, "Protected system components",
+                 "These packages are critical for your operating system and cannot be removed "
+                 f"with UniPkg:\n\n{lines}")
+
+
+def _block_if_critical(dialog: Adw.AlertDialog, label: Gtk.Label, apt_backend, removed: list[str]) -> bool:
+    """Keep the removal disabled if apt would also remove protected packages."""
+    critical = [(n, apt_backend.protected[n]) for n in removed if n in apt_backend.protected]
+    if not critical:
+        return False
+    label.set_label("⛔ Not possible: this would also remove critical system components:\n"
+                    + "\n".join(f"• {name} — {reason}" for name, reason in critical[:12])
+                    + ("\n…" if len(critical) > 12 else ""))
+    label.remove_css_class("warning")
+    label.add_css_class("error")
+    label.set_visible(True)
+    dialog.set_response_enabled("remove", False)
+    return True
+
+
+def _check_failed(dialog: Adw.AlertDialog, label: Gtk.Label, exc) -> None:
+    label.set_label(f"Could not check the dependencies ({exc}); apt itself still refuses to remove "
+                    "essential packages.")
+    label.set_visible(True)
+    dialog.set_response_enabled("remove", True)

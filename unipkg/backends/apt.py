@@ -26,7 +26,7 @@ from ..models import (
     VerificationCheck,
 )
 from ..util import parse_date, parse_deb822, parse_size
-from .base import Backend, BackendError, Command
+from .base import Backend, BackendError, Command, guard_protected
 from .gpg import KeyInfo, key_data_keys, keyring_keys
 
 APT_ENV = {"DEBIAN_FRONTEND": "noninteractive"}
@@ -35,8 +35,74 @@ DEFAULT_KEYRINGS = ["/etc/apt/trusted.gpg", "/etc/apt/trusted.gpg.d/*.gpg", "/et
 
 DPKG_FORMAT = (
     "${db:Status-Abbrev}\t${Package}\t${Version}\t${Architecture}\t${Installed-Size}\t"
-    "${Maintainer}\t${binary:Summary}\t${Section}\t${Homepage}\n"
+    "${Maintainer}\t${binary:Summary}\t${Section}\t${Homepage}\t${Essential}\t${Priority}\t"
+    "${Protected}\n"
 )
+
+# Packages whose removal would break booting, the desktop session, networking,
+# administration or package management itself (in addition to everything dpkg
+# marks Essential/Protected or with priority required/important).
+CRITICAL_PACKAGES = {
+    "systemd": "Init system and service manager",
+    "systemd-sysv": "Init system",
+    "init": "Init system",
+    "dbus": "System message bus used by the whole desktop",
+    "dbus-broker": "System message bus",
+    "sudo": "Administrator access",
+    "polkitd": "Authorisation service used for administrator prompts",
+    "pkexec": "Administrator prompts (also used by UniPkg)",
+    "apt": "Package management",
+    "dpkg": "Package management",
+    "gpgv": "Signature verification of package repositories",
+    "ca-certificates": "Trusted certificates for secure connections",
+    "curl": "Used by UniPkg to talk to snapd",
+    "snapd": "Snap package system",
+    "flatpak": "Flatpak package system (UniPkg runs on it)",
+    "network-manager": "Network connections",
+    "netplan.io": "Network configuration",
+    "gnome-shell": "The desktop shell",
+    "gnome-session-bin": "The desktop session",
+    "gnome-session": "The desktop session",
+    "gdm3": "Login screen",
+    "mutter": "Window manager of the desktop",
+    "xwayland": "Runs X11 applications in the desktop session",
+    "xdg-desktop-portal": "Desktop portals used by sandboxed apps",
+    "xdg-desktop-portal-gnome": "Desktop portals used by sandboxed apps",
+    "ubuntu-desktop": "Ubuntu desktop meta package",
+    "ubuntu-desktop-minimal": "Ubuntu desktop meta package",
+    "ubuntu-minimal": "Ubuntu base system meta package",
+    "ubuntu-standard": "Ubuntu standard system meta package",
+    "linux-generic": "Kernel meta package (keeps the kernel updated)",
+    "linux-firmware": "Hardware firmware",
+    "initramfs-tools": "Builds the boot image",
+    "shim-signed": "Secure Boot loader",
+    "grub-common": "Boot loader",
+    "grub2-common": "Boot loader",
+    "grub-pc": "Boot loader",
+    "grub-efi-amd64": "Boot loader",
+    "grub-efi-amd64-signed": "Boot loader",
+}
+CRITICAL_PREFIXES = ("linux-generic-", "linux-image-generic", "ubuntu-desktop", "gnome-shell-common")
+
+
+def protection_reason(name: str, essential: str = "", priority: str = "", protected: str = "",
+                      running_kernel: str = "") -> str:
+    """Why a package must not be removed ('' if it may be removed)."""
+    if essential == "yes":
+        return "Essential system package"
+    if protected == "yes":
+        return "Protected system package"
+    if name in CRITICAL_PACKAGES:
+        return CRITICAL_PACKAGES[name]
+    if name.startswith(CRITICAL_PREFIXES):
+        return "Keeps the kernel or desktop installed"
+    if running_kernel and name in (f"linux-image-{running_kernel}", f"linux-modules-{running_kernel}",
+                                   f"linux-image-unsigned-{running_kernel}",
+                                   f"linux-modules-extra-{running_kernel}"):
+        return "The kernel you are currently running"
+    if priority in ("required", "important"):
+        return f"Part of the base system (priority: {priority})"
+    return ""
 
 
 def unconfined_permissions(local: bool) -> list[Permission]:
@@ -317,13 +383,16 @@ class AptBackend(Backend):
         origins = parse_policy_origins(host.run(["apt-cache", "policy"], timeout=60).stdout)
         desktop = self._desktop_entries()
         updated = self._install_times()
+        kernel = host.run(["uname", "-r"], timeout=10).stdout.strip()
+        protected: dict[str, str] = {}
 
         packages: list[Package] = []
         for line in dpkg.stdout.splitlines():
             cols = line.split("\t")
-            if len(cols) < 9 or not cols[0].startswith("ii"):
+            if len(cols) < 12 or not cols[0].startswith("ii"):
                 continue
             _status, name, version, arch, isize, maint, summary, section, homepage = cols[:9]
+            essential, priority, protected_flag = cols[9:12]
             info = apt_list.get((name, arch)) or apt_list.get((name, "all")) or {}
             flags = info.get("flags", [])
             local = "local" in flags
@@ -359,7 +428,12 @@ class AptBackend(Backend):
                        "desktop_file": (entry or {}).get("_file", "")},
             )
             pkg.updated = updated.get(f"{name}:{arch}") or updated.get(name)
+            reason = protection_reason(name, essential, priority, protected_flag, kernel)
+            if reason:
+                pkg.extra["protected"] = reason
+                protected[name] = reason
             packages.append(pkg)
+        self.protected = protected
         return packages
 
     def _install_times(self) -> dict[str, float]:
@@ -639,7 +713,15 @@ done
                        timeout=60)
         return [l.split()[1] for l in res.stdout.splitlines() if l.startswith(("Remv ", "Purg "))]
 
+    protected: dict[str, str] = {}  # package name -> reason, filled by list_installed()
+
+    def critical_removals(self, pkgs: list[Package], purge: bool = False) -> list[tuple[str, str]]:
+        """Protected packages that removing *pkgs* would take with it (dependencies)."""
+        removed = self.simulate_removal(pkgs, purge)
+        return [(name, self.protected[name]) for name in removed if name in self.protected]
+
     def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        guard_protected(pkgs)
         verb = "purge" if delete_data else "remove"
         names = [p.name for p in pkgs]
         script = (f"apt-get {verb} {' '.join(shlex.quote(o) for o in APT_OPTS)} "

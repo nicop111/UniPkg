@@ -23,7 +23,7 @@ from ..models import (
     VerificationCheck,
 )
 from ..util import parse_date, parse_keyfile, parse_size, split_list
-from .base import Backend, BackendError, Command
+from .base import Backend, BackendError, Command, guard_protected
 from .gpg import describe_keyring
 
 SYSTEM_DIR = "/var/lib/flatpak"
@@ -440,6 +440,9 @@ class FlatpakBackend(Backend):
             ]
             if not pkg.developer:
                 pkg.developer = _developer_from_id(pkg.name)
+            if pkg.name == "io.github.unipkg.UniPkg":
+                pkg.extra["protected"] = ("This is UniPkg itself; remove it with “flatpak uninstall "
+                                          "io.github.unipkg.UniPkg” or another software manager")
 
     def reload_permissions(self, pkg: Package) -> None:
         self._load_details([pkg])
@@ -563,6 +566,7 @@ class FlatpakBackend(Backend):
                         ["flatpak", "install", "--user", "-y", "--noninteractive", flag, path])]
 
     def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        guard_protected(pkgs)
         cmds = []
         for inst in ("system", "user"):
             group = [p for p in pkgs if p.extra.get("installation", "system") == inst]

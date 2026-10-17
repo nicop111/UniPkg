@@ -41,6 +41,14 @@ class BackendError(RuntimeError):
     pass
 
 
+def guard_protected(pkgs: list[Package]) -> None:
+    """Refuse to build removal commands for critical system components."""
+    protected = [p for p in pkgs if p.extra.get("protected")]
+    if protected:
+        raise BackendError("Refusing to remove protected system components: " + ", ".join(
+            f"{p.display_name} ({p.extra['protected']})" for p in protected))
+
+
 class Backend:
     name = "backend"
     kinds: tuple[PackageKind, ...] = ()

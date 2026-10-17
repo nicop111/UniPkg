@@ -339,7 +339,10 @@ class CompareDialog(Adw.Dialog):
             if child is not None:
                 box.remove(child)
             pkg = self._installed_pkg(item)
-            if pkg is not None:
+            if pkg is not None and pkg.extra.get("protected"):
+                btn = Gtk.Button(label="Protected", sensitive=False,
+                                 tooltip_text=f"Protected system component: {pkg.extra['protected']}")
+            elif pkg is not None:
                 btn = Gtk.Button(label=f"Uninstall {item.kind.label}")
                 btn.add_css_class("destructive-action")
                 btn.connect("clicked", lambda _b, pkg=pkg: self._on_uninstall(pkg))

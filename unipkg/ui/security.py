@@ -9,7 +9,7 @@ from gi.repository import Adw, GLib, Gtk
 from ..models import Package
 from ..risk import RiskAssessment, RiskLevel, assess_all
 from .common import ICONS, dim_label, kind_badge
-from .details import confirm_bulk_uninstall, confirm_uninstall
+from .details import confirm_bulk_uninstall, confirm_uninstall, protected_badge
 from .selection import Selection, SelectionBar
 
 
@@ -145,14 +145,18 @@ class SecurityPage(Gtk.Box):
             f"{pkg.display_name} ({pkg.name})"
         row = Adw.ActionRow(title=title, subtitle=a.summary, activatable=True,
                             use_markup=False, subtitle_lines=2)
-        check = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=pkg.uid in self.selection,
-                                tooltip_text="Select for bulk uninstall")
-        check.connect("toggled", lambda c, uid=pkg.uid: self.selection.set(uid, c.get_active()))
-        self._checks[pkg.uid] = check
         image = Gtk.Image(pixel_size=32)
         ICONS.set_image(image, pkg, 32)
         row.add_prefix(image)
-        row.add_prefix(check)  # later prefixes are placed further left
+        reason = pkg.extra.get("protected")
+        if reason:
+            row.add_prefix(protected_badge(reason))  # later prefixes are placed further left
+        else:
+            check = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=pkg.uid in self.selection,
+                                    tooltip_text="Select for bulk uninstall")
+            check.connect("toggled", lambda c, uid=pkg.uid: self.selection.set(uid, c.get_active()))
+            self._checks[pkg.uid] = check
+            row.add_prefix(check)
         row.add_suffix(kind_badge(pkg.kind))
         row.add_suffix(risk_badge(a.level, a.score))
         remove = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
@@ -160,6 +164,7 @@ class SecurityPage(Gtk.Box):
         remove.add_css_class("flat")
         remove.add_css_class("error")
         remove.connect("clicked", lambda *_: self.uninstall(pkg))
+        remove.set_visible(not reason)
         row.add_suffix(remove)
         row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
         row._assessment = a  # type: ignore[attr-defined]
@@ -181,7 +186,7 @@ class SecurityPage(Gtk.Box):
         row = self.list.get_first_child()
         while row is not None:
             a = getattr(row, "_assessment", None)
-            if a is not None and row.get_visible():
+            if a is not None and row.get_visible() and not a.pkg.extra.get("protected"):
                 uids.add(a.pkg.uid)
             row = row.get_next_sibling()
         self.selection.replace(self.selection.uids | uids)
@@ -258,10 +263,17 @@ class RiskDialog(Adw.Dialog):
                                 start_icon_name="emblem-system-symbolic")
         details.connect("activated", self._on_details)
         actions.add(details)
-        remove = Adw.ButtonRow(title="Uninstall…", start_icon_name="user-trash-symbolic")
-        remove.add_css_class("destructive-action")
-        remove.connect("activated", lambda *_: page.uninstall(pkg, self))
-        actions.add(remove)
+        if pkg.extra.get("protected"):
+            locked = Adw.ActionRow(title="Protected system component",
+                                   subtitle=f"{pkg.extra['protected']}. It cannot be removed here.",
+                                   use_markup=False)
+            locked.add_prefix(Gtk.Image.new_from_icon_name("system-lock-screen-symbolic"))
+            actions.add(locked)
+        else:
+            remove = Adw.ButtonRow(title="Uninstall…", start_icon_name="user-trash-symbolic")
+            remove.add_css_class("destructive-action")
+            remove.connect("activated", lambda *_: page.uninstall(pkg, self))
+            actions.add(remove)
         prefs.add(actions)
 
         toolbar.set_content(prefs)
