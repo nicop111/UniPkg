@@ -134,6 +134,11 @@ def _validation_trust(validation: str) -> Trust:
     return Trust.VERIFIED if validation in ("verified", "starred") else Trust.SIGNED
 
 
+# The snap CLI only lets polkit ask for a password when stdin is a terminal;
+# UniPkg runs commands without one, so every state-changing snap command is
+# wrapped in pkexec (see host.privileged).
+
+
 class SnapBackend(Backend):
     name = "Snap"
     kinds = (PackageKind.SNAP,)
@@ -216,7 +221,8 @@ class SnapBackend(Backend):
 
     def set_permission(self, pkg: Package, perm: Permission, granted: bool) -> list[Command]:
         verb = "connect" if granted else "disconnect"
-        return [Command(f"{verb.capitalize()} {perm.label}", ["snap", verb, f"{pkg.name}:{perm.key}"])]
+        return [Command(f"{verb.capitalize()} {perm.label}",
+                        host.privileged(["snap", verb, f"{pkg.name}:{perm.key}"]))]
 
     # Search / install ------------------------------------------------------------
     def search(self, query: str) -> list[SearchResult]:
@@ -251,17 +257,17 @@ class SnapBackend(Backend):
         argv = ["snap", "install", result.name]
         if result.extra.get("classic"):
             argv.append("--classic")
-        return [Command(f"Install {result.display_name} (Snap)", argv)]
+        return [Command(f"Install {result.display_name} (Snap)", host.privileged(argv))]
 
     def install_file(self, host_path: str) -> list[Command]:
         return [Command("Install local snap (unsigned)",
-                        ["snap", "install", "--dangerous", host_path])]
+                        host.privileged(["snap", "install", "--dangerous", host_path]))]
 
     def uninstall(self, pkg: Package, delete_data: bool) -> list[Command]:
         argv = ["snap", "remove", pkg.name]
         if delete_data:
             argv.insert(2, "--purge")
-        cmds = [Command(f"Remove {pkg.display_name}", argv)]
+        cmds = [Command(f"Remove {pkg.display_name}", host.privileged(argv))]
         if delete_data:
             cmds.append(Command("Delete user data in ~/snap",
                                 ["sh", "-c", f'rm -rf -- "$HOME/snap/{pkg.name}"'], allow_failure=True))
@@ -279,10 +285,10 @@ class SnapBackend(Backend):
         return {f"snap::{s['name']}": s.get("version", "") for s in result}
 
     def update(self, pkg: Package) -> list[Command]:
-        return [Command(f"Refresh {pkg.display_name}", ["snap", "refresh", pkg.name])]
+        return [Command(f"Refresh {pkg.display_name}", host.privileged(["snap", "refresh", pkg.name]))]
 
     def update_all(self) -> list[Command]:
-        return [Command("Refresh all snaps", ["snap", "refresh"])]
+        return [Command("Refresh all snaps", host.privileged(["snap", "refresh"]))]
 
     # Verification -------------------------------------------------------------------
     def verify(self, pkg: Package, deep: bool = False) -> Verification:

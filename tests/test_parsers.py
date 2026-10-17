@@ -264,7 +264,22 @@ class SnapTests(unittest.TestCase):
         self.assertTrue(perms["camera"].granted)
         self.assertFalse(perms["home"].granted)
         cmd = backend.set_permission(pkg, perms["home"], True)[0]
-        self.assertEqual(cmd.argv, ["snap", "connect", "foo:home"])
+        self.assertEqual(cmd.argv, ["pkexec", "snap", "connect", "foo:home"])
+
+    def test_state_changing_commands_are_privileged(self):
+        from unipkg.models import Package
+
+        backend = snap.SnapBackend()
+        pkg = Package(kind=PackageKind.SNAP, name="foo", display_name="Foo", extra={})
+        result = SearchResult(PackageKind.SNAP, "foo", "Foo", extra={"classic": True})
+        commands = (backend.update(pkg) + backend.update_all() + backend.install(result)
+                    + backend.uninstall(pkg, delete_data=False) + backend.install_file("/tmp/x.snap"))
+        for cmd in commands:
+            self.assertEqual(cmd.argv[:2], ["pkexec", "snap"], cmd.argv)
+        # Deleting ~/snap data must run as the user, not as root.
+        purge = backend.uninstall(pkg, delete_data=True)
+        self.assertEqual(purge[0].argv[:2], ["pkexec", "snap"])
+        self.assertNotEqual(purge[1].argv[0], "pkexec")
 
 
 class GroupingTests(unittest.TestCase):
