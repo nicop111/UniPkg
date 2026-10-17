@@ -106,7 +106,7 @@ class Application(Adw.Application):
             comments="One place to manage APT, Debian, Flatpak and Snap packages: install, update, "
                      "remove, control permissions and verify signatures.",
             license_type=Gtk.License.GPL_3_0,
-            website="https://github.com/unipkg/unipkg",
+            website="https://github.com/nicop111/UniPkg",
         )
         about.present(self.window)
 

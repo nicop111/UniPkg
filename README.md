@@ -9,6 +9,75 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
 | Flatpak | System and per-user installations | `flatpak` CLI, the app's metadata and overrides, the portal permission store, AppStream |
 | Snap | All installed snaps | the snapd REST API (`/run/snapd.socket`) |
 
+## Installation
+
+UniPkg is not on Flathub or the Snap Store yet. You build the Flatpak yourself, which takes a few minutes and installs it for your user only. It runs on Debian, Ubuntu and their derivatives; other distributions lack APT.
+
+### 1. Install the build tools (once)
+
+You need `git` and `flatpak`, plus Flathub for the build tools and the GNOME runtime:
+
+```sh
+sudo apt install git flatpak
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user flathub org.flatpak.Builder org.gnome.Sdk//50 org.gnome.Platform//50
+```
+
+The SDK is a large download (about 1 GB) and is only needed for building.
+
+### 2. Build and install UniPkg
+
+```sh
+git clone https://github.com/nicop111/UniPkg.git
+cd UniPkg
+./build-aux/build-flatpak.sh
+```
+
+The script builds the app, installs it for your user and also writes a single-file bundle `unipkg.flatpak`. You can copy that bundle to another computer and install it there with `flatpak install --user unipkg.flatpak`.
+
+### 3. Start it
+
+Open **UniPkg** from your app grid, or run:
+
+```sh
+flatpak run io.github.unipkg.UniPkg
+```
+
+### Update
+
+```sh
+cd UniPkg
+git pull
+./build-aux/build-flatpak.sh
+```
+
+Then quit UniPkg completely (Ctrl+Q) and start it again.
+
+### Uninstall
+
+```sh
+flatpak uninstall --user --delete-data io.github.unipkg.UniPkg
+```
+
+To also remove the build tools: `flatpak uninstall --user org.flatpak.Builder org.gnome.Sdk//50`.
+
+### Requirements on the system
+
+UniPkg manages your system's own package managers, so it uses what is installed there:
+- **Package tools:** `apt`/`dpkg`, `flatpak` and `snapd`. Each one is optional; formats that aren't installed are skipped.
+- **Administration and verification:** `pkexec` for password prompts, `gpg`/`gpgv` for signature checks, and `curl` to talk to snapd.
+
+On Ubuntu all of these are installed by default.
+
+### Running from source (development)
+
+Without building the Flatpak you can run it straight from the source tree. This needs PyGObject, GTK 4 and libadwaita ≥ 1.6:
+
+```sh
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+python3 -m unipkg
+```
+
 ## Features
 
 - **Installed list**: one list of everything on the system.
@@ -82,22 +151,6 @@ Privileged APT operations and edits to source files run through `pkexec`, so pol
 
 The host needs the usual tools: `apt`, `dpkg`, `flatpak`, `snap`/`snapd` (each backend is optional), `pkexec`, `gpg`/`gpgv` and `curl` (for the snapd API).
 
-## Building
-
-```sh
-# one-time: build tooling and runtimes
-flatpak install flathub org.flatpak.Builder org.gnome.Sdk//50 org.gnome.Platform//50
-
-./build-aux/build-flatpak.sh          # builds, installs for the user, writes unipkg.flatpak
-flatpak run io.github.unipkg.UniPkg
-```
-
-To run straight from the source tree during development (needs PyGObject, GTK 4 and libadwaita ≥ 1.6):
-
-```sh
-python3 -m unipkg
-```
-
 ## Tests
 
 ```sh
@@ -113,10 +166,14 @@ unipkg/
   host.py          run commands on the host (flatpak-spawn / pkexec), streaming output
   models.py        Package, Permission, Repository, SearchResult, Verification
   manager.py       loads packages and updates from all backends
+  risk.py          security risk assessment
+  running.py       detects/closes running apps around updates
   backends/        apt.py (APT + local .deb), flatpak.py, snap.py, gpg.py
-  ui/              window, installed list, details, explore/compare, updates, repositories
+  ui/              window, installed list, details, explore/compare, updates, repositories, security
 data/              desktop file, AppStream metainfo, icon
 io.github.unipkg.UniPkg.json   Flatpak manifest
 ```
 
-License: GPL-3.0-or-later
+## License
+
+UniPkg is free software, licensed under the GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
