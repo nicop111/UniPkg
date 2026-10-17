@@ -154,6 +154,13 @@ class OperationDialog(Adw.Dialog):
                             warnings.append(warning)
                             continue
                     if not cmd.allow_failure:
+                        if cmd.failure_hint is not None:
+                            try:
+                                hint = cmd.failure_hint("\n".join(output))
+                            except Exception:  # noqa: BLE001
+                                hint = None
+                            if hint:
+                                warnings.append(hint)
                         ok = False
                         break
         GLib.idle_add(self._finish, ok, warnings)
@@ -172,6 +179,9 @@ class OperationDialog(Adw.Dialog):
             self._step.set_label("Cancelled")
         else:
             self._step.set_label("The operation failed — see details")
+            if warnings:
+                self._warning.set_label("\n\n".join(warnings))
+                self._warning.set_visible(True)
         self._close_btn.set_label("Close")
         self._close_btn.add_css_class("suggested-action")
         self.set_can_close(True)

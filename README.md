@@ -33,6 +33,9 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
 
   For APT, the confirmation dialog lists any other packages apt would also remove.
 - **Updates**: one list for APT, Flatpak and Snap, with **Update** buttons per app and per group, **Update All**, and **Refresh package lists** (`apt-get update`).
+- **Running apps**: before an update, UniPkg checks whether the apps involved are running. Flatpak and Snap apps are matched by their systemd scope; APT apps by their executables. Background services and helpers are ignored. If any are running you can:
+  - **Close and Update**: asks the apps to quit normally (SIGTERM), waits up to 10 seconds and never force-kills. Afterwards a toast offers **Reopen**.
+  - **Update Anyway**: Flatpak and APT apps keep running the old version, and a toast offers **Restart**. snapd refuses to update running snaps, so those are skipped.
 - **Repositories**:
   - APT sources, in both one-line `.list` and deb822 `.sources` format: enable, disable, remove, inspect signing keys, and add PPAs or URL repositories. When adding a repository, the signing key's fingerprint is shown before it is installed into `/etc/apt/keyrings`.
   - Flatpak remotes (system and user): enable, disable, add and remove.

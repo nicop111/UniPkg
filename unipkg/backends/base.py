@@ -33,6 +33,8 @@ class Command:
     func: Optional[Callable[[], Optional[str]]] = None
     allow_failure: bool = False
     on_failure: Optional[Callable[[int, str], Optional[str]]] = None
+    # Turns the output of a failed run into a human readable explanation.
+    failure_hint: Optional[Callable[[str], Optional[str]]] = None
 
 
 class BackendError(RuntimeError):

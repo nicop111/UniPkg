@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import re
 import subprocess
 import urllib.parse
 from typing import Any, Optional
@@ -285,10 +286,17 @@ class SnapBackend(Backend):
         return {f"snap::{s['name']}": s.get("version", "") for s in result}
 
     def update(self, pkg: Package) -> list[Command]:
-        return [Command(f"Refresh {pkg.display_name}", host.privileged(["snap", "refresh", pkg.name]))]
+        return [Command(f"Refresh {pkg.display_name}", host.privileged(["snap", "refresh", pkg.name]),
+                        failure_hint=running_apps_hint)]
 
     def update_all(self) -> list[Command]:
-        return [Command("Refresh all snaps", host.privileged(["snap", "refresh"]))]
+        return [Command("Refresh all snaps", host.privileged(["snap", "refresh"]),
+                        failure_hint=running_apps_hint)]
+
+    def update_many(self, pkgs: list[Package]) -> list[Command]:
+        names = [p.name for p in pkgs]
+        return [Command(f"Refresh {', '.join(names)}", host.privileged(["snap", "refresh", *names]),
+                        failure_hint=running_apps_hint)]
 
     # Verification -------------------------------------------------------------------
     def verify(self, pkg: Package, deep: bool = False) -> Verification:
@@ -368,6 +376,16 @@ class SnapBackend(Backend):
             signed_by="Canonical store root key (built into snapd)", trust=Trust.SIGNED,
             removable=False, toggleable=False,
         )]
+
+
+def running_apps_hint(output: str) -> Optional[str]:
+    """Explain snapd's refusal to refresh snaps that are running."""
+    names = re.findall(r'snap "([^"]+)" has running apps', output)
+    if not names and "has running apps" not in output:
+        return None
+    which = ", ".join(names) if names else "The app"
+    return (f"{which} is still running. Snaps cannot be updated while they run — close the app "
+            "and try again (the update will also be applied automatically after it is closed).")
 
 
 def unconfined_snap_permissions(pkg: Package) -> list[Permission]:

@@ -305,3 +305,51 @@ class GroupingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RunningAppTests(unittest.TestCase):
+    TABLE = (
+        "100\tapp-flatpak-com.slack.Slack-123.scope\t/usr/bin/bwrap\tbwrap --args 40 slack\n"
+        "101\tsnap.brave.brave-f687.scope\t/snap/brave/694/opt/brave.com/brave/brave\t/snap/brave/x\n"
+        "102\tsnap.cups.cups-browsed.service\t/snap/cups/1/sbin/cups-browsed\tcups-browsed\n"
+        "103\tapp-gnome-google\\x2dchrome-55.scope\t/opt/google/chrome/chrome (deleted)\tchrome\n"
+        "104\tdbus.service\t/usr/bin/gnome-calculator\t/usr/bin/gnome-calculator --gapplication-service\n"
+        "105\tapp-gnome-org.gnome.SettingsDaemon.X-1.scope\t/usr/libexec/gsd-disk-utility-notify\tx\n"
+        "106\tapp-flatpak-io.github.unipkg.UniPkg-9.scope\t/usr/bin/bwrap\tbwrap unipkg\n"
+        "garbage line\n"
+    )
+
+    def _pkg(self, kind, name, **extra):
+        from unipkg.models import Package
+
+        return Package(kind=kind, name=name, display_name=name, is_app=True, extra=extra)
+
+    def test_match_running(self):
+        from unipkg import running
+
+        procs = running.parse_process_table(self.TABLE)
+        self.assertEqual(len(procs), 7)
+        self.assertEqual(procs[3].exe, "/opt/google/chrome/chrome")
+        pkgs = [
+            self._pkg(PackageKind.FLATPAK, "com.slack.Slack"),
+            self._pkg(PackageKind.FLATPAK, "io.github.unipkg.UniPkg"),
+            self._pkg(PackageKind.SNAP, "brave"),
+            self._pkg(PackageKind.SNAP, "cups"),
+            self._pkg(PackageKind.APT, "google-chrome-stable"),
+            self._pkg(PackageKind.APT, "gnome-calculator"),
+            self._pkg(PackageKind.APT, "gnome-disk-utility"),
+        ]
+        files = {
+            "google-chrome-stable": {"/opt/google/chrome/chrome"},
+            "gnome-calculator": {"/usr/bin/gnome-calculator"},
+            "gnome-disk-utility": {"/usr/libexec/gsd-disk-utility-notify"},
+        }
+        found = {a.pkg.name: a.pids for a in running.match_running(pkgs, procs, files)}
+        # Background services, libexec helpers and UniPkg itself are not "running apps".
+        self.assertEqual(found, {"com.slack.Slack": [100], "brave": [101],
+                                 "google-chrome-stable": [103]})
+
+    def test_snap_running_hint(self):
+        out = 'error: cannot refresh "brave": snap "brave" has running apps (brave), pids: 1'
+        self.assertIn("brave is still running", snap.running_apps_hint(out))
+        self.assertIsNone(snap.running_apps_hint("error: network timeout"))

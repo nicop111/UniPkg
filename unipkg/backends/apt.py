@@ -335,7 +335,8 @@ class AptBackend(Backend):
                 confinement="Not sandboxed",
                 trust=Trust.UNVERIFIED if local else Trust.SIGNED,
                 extra={"installation": "", "arch": arch, "section": section, "homepage": homepage,
-                       "suites": suites, "package": name},
+                       "suites": suites, "package": name,
+                       "desktop_file": (entry or {}).get("_file", "")},
             )
             packages.append(pkg)
         return packages
@@ -370,7 +371,7 @@ done
                 flush()
                 parts = line[4:].split(" ", 1)
                 current_pkgs = [p.strip() for p in parts[0].split(",")]
-                current = {}
+                current = {"_file": parts[1].strip() if len(parts) > 1 else ""}
             elif "=" in line:
                 k, v = line.split("=", 1)
                 current.setdefault(k, v)
@@ -570,6 +571,20 @@ done
         return [Command(f"Install {os.path.basename(host_path)}",
                         host.privileged(["apt-get", "install", *APT_OPTS, host_path], APT_ENV),
                         on_failure=self._outcome_check([package], "installed") if package else None)]
+
+    def package_files(self, names: list[str]) -> dict[str, set[str]]:
+        """Files installed by each package (``dpkg -L``)."""
+        script = "; ".join(f'echo "@@P {n}"; dpkg -L {shlex.quote(n)} 2>/dev/null'
+                           for n in names)
+        res = host.run_shell(script, timeout=60)
+        files: dict[str, set[str]] = {}
+        current: Optional[set[str]] = None
+        for line in res.stdout.splitlines():
+            if line.startswith("@@P "):
+                current = files.setdefault(line[4:].strip(), set())
+            elif current is not None and line.startswith("/"):
+                current.add(line.strip())
+        return files
 
     def simulate_removal(self, pkg: Package, purge: bool) -> list[str]:
         res = host.run(["apt-get", "-s", "purge" if purge else "remove", pkg.name], timeout=60)

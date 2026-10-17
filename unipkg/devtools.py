@@ -15,8 +15,18 @@ from gi.repository import GLib, Graphene, Gtk  # noqa: E402
 
 
 def capture(window: Gtk.Window, path: str) -> None:
-    width, height = window.get_width(), window.get_height()
-    paintable = Gtk.WidgetPaintable.new(window)
+    _capture_widget(window, window, path)
+    # Dialogs stacked on other dialogs are not part of the window paintable.
+    dialog = window.get_visible_dialog() if hasattr(window, "get_visible_dialog") else None
+    if dialog is not None:
+        _capture_widget(window, dialog, path.removesuffix(".png") + "-dialog.png")
+
+
+def _capture_widget(window: Gtk.Window, widget: Gtk.Widget, path: str) -> None:
+    width, height = widget.get_width(), widget.get_height()
+    if width <= 0 or height <= 0:
+        return
+    paintable = Gtk.WidgetPaintable.new(widget)
     snapshot = Gtk.Snapshot()
     paintable.snapshot(snapshot, width, height)
     node = snapshot.to_node()
@@ -72,6 +82,10 @@ def run_script(app, window) -> None:
                 if adj.get_upper() > adj.get_page_size():
                     adj.set_value(float(arg) * (adj.get_upper() - adj.get_page_size()))
                     break
+        elif cmd == "dialogcall":
+            dialog = window.get_visible_dialog()
+            if dialog is not None:
+                getattr(dialog, arg)()
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:

@@ -7,6 +7,7 @@ from gi.repository import Adw, GLib, Gtk
 from ..models import Package, PackageKind
 from .common import ICONS, kind_badge
 from .operation import run_operation
+from .running_check import update_with_running_check
 
 
 class UpdatesPage(Gtk.Box):
@@ -103,25 +104,43 @@ class UpdatesPage(Gtk.Box):
 
     # actions --------------------------------------------------------------
     def update_packages(self, pkgs: list[Package], title: str) -> None:
-        commands = []
-        apt_pkgs = [p for p in pkgs if p.kind in (PackageKind.APT, PackageKind.DEB)]
-        if apt_pkgs and self.manager.apt:
-            commands += self.manager.apt.update_many(apt_pkgs)
-        for pkg in pkgs:
-            if pkg in apt_pkgs:
-                continue
-            backend = self.manager.backend_for(pkg.kind)
-            if backend:
-                commands += backend.update(pkg)
-        run_operation(self, self.manager, f"Updating {title}", commands, self._after)
+        def build(skip: set[str]) -> list:
+            selected = [p for p in pkgs if p.uid not in skip]
+            commands = []
+            apt_pkgs = [p for p in selected if p.kind in (PackageKind.APT, PackageKind.DEB)]
+            if apt_pkgs and self.manager.apt:
+                commands += self.manager.apt.update_many(apt_pkgs)
+            snaps = [p for p in selected if p.kind == PackageKind.SNAP]
+            if snaps and self.manager.snap:
+                commands += self.manager.snap.update_many(snaps)
+            for pkg in selected:
+                if pkg.kind == PackageKind.FLATPAK and self.manager.flatpak:
+                    commands += self.manager.flatpak.update(pkg)
+            return commands
+
+        update_with_running_check(self, self.manager, pkgs, f"Updating {title}", build, self._after)
 
     def update_all(self, *_):
-        kinds = {p.kind for p in self.manager.packages_with_updates}
-        commands = []
-        for backend in self.manager.backends:
-            if any(k in kinds for k in backend.kinds):
-                commands += backend.update_all()
-        run_operation(self, self.manager, "Updating everything", commands, self._after)
+        pending = self.manager.packages_with_updates
+        kinds = {p.kind for p in pending}
+
+        def build(skip: set[str]) -> list:
+            commands = []
+            for backend in self.manager.backends:
+                if not any(k in kinds for k in backend.kinds):
+                    continue
+                skipped = [p for p in pending if p.uid in skip and p.kind in backend.kinds]
+                if skipped and backend is self.manager.snap:
+                    # Refresh only the snaps that are not running.
+                    rest = [p for p in pending if p.kind == PackageKind.SNAP and p.uid not in skip]
+                    if rest:
+                        commands += backend.update_many(rest)
+                else:
+                    commands += backend.update_all()
+            return commands
+
+        update_with_running_check(self, self.manager, pending, "Updating everything", build,
+                                  self._after)
 
     def refresh_lists(self, *_):
         commands = []

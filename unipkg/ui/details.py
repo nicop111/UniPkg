@@ -11,6 +11,7 @@ from ..models import Package, PackageKind, Permission, PermissionCategory, Verif
 from ..util import format_size
 from .common import ICONS, dim_label, error_dialog, kind_badge, run_async, trust_badge
 from .operation import run_operation
+from .running_check import update_with_running_check
 
 
 class PackageDetailsDialog(Adw.Dialog):
@@ -329,9 +330,10 @@ class PackageDetailsDialog(Adw.Dialog):
 
     # actions -------------------------------------------------------------------------
     def _on_update(self, *_):
-        commands = self.backend.update(self.pkg)
-        run_operation(self, self.manager, f"Updating {self.pkg.display_name}", commands,
-                      self._after_change)
+        update_with_running_check(
+            self, self.manager, [self.pkg], f"Updating {self.pkg.display_name}",
+            lambda skip: [] if self.pkg.uid in skip else self.backend.update(self.pkg),
+            self._after_change)
 
     def _after_change(self, ok: bool) -> None:
         if ok:
