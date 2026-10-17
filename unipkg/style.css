@@ -86,3 +86,5 @@
 .counter.counter-alert { background: alpha(@error_color, 0.25); color: @error_color; }
 
 .protected { color: alpha(currentColor, 0.7); }
+
+.stale-release { color: @error_color; }

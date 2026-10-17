@@ -27,6 +27,8 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
   - license and how it gets updates
   - signature verification
 
+  The **newest version** is highlighted in green. Versions are normalised across formats: the Debian epoch and revision are dropped, and pre-releases rank below final releases. A **red warning** next to a release date older than one year flags packages that are likely no longer maintained.
+
   It also shows each format's **latest release** date (Flatpak commit date, the Snap channel's release date, or the top entry of the APT changelog) and, for formats already installed, when they were last updated **on this computer**.
 
   "Last updated" in the installed list means the last install or update on this computer: dpkg's file list timestamp, the Flatpak deployment time, or snapd's install date.

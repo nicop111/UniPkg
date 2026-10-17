@@ -146,3 +146,32 @@ def format_datetime(epoch: Optional[float]) -> str:
     if not epoch:
         return "Unknown"
     return _dt.datetime.fromtimestamp(epoch).strftime("%Y-%m-%d %H:%M")
+
+
+_PRERELEASE = re.compile(r"(alpha|beta|rc\d*|dev|pre|preview|snapshot|nightly|git|~)", re.I)
+
+
+def version_key(version: str, debian: bool = False) -> Optional[tuple]:
+    """Comparable key for versions from different package formats.
+
+    Drops the Debian epoch (``1:``) and, for APT packages, the Debian revision
+    (``-1ubuntu2``) and packaging suffixes (``+dfsg``), compares the numeric
+    upstream version and ranks pre-releases below the final release.
+    """
+    v = (version or "").strip()
+    v = re.sub(r"^\d+:", "", v)
+    if re.fullmatch(r"[0-9a-f]{7,40}", v) and not v.isdigit():
+        return None  # a commit hash, not a comparable version
+    if debian and "-" in v:
+        v = v.rsplit("-", 1)[0]
+    m = re.match(r"v?(\d+(?:\.\d+)*)(.*)$", v)
+    if not m:
+        return None
+    numbers = [int(n) for n in m.group(1).split(".")]
+    while len(numbers) > 1 and numbers[-1] == 0:
+        numbers.pop()  # 1.2.0 == 1.2
+    rest = m.group(2)
+    if debian:
+        rest = re.split(r"[+]", rest)[0]
+    final = 0 if _PRERELEASE.search(rest) else 1
+    return (tuple(numbers), final)

@@ -513,3 +513,18 @@ class ProtectionTests(unittest.TestCase):
             apt.AptBackend().uninstall_many([shell], False)
         with self.assertRaises(BackendError):
             snap.SnapBackend().uninstall(core, False)
+
+
+class VersionCompareTests(unittest.TestCase):
+    def test_cross_format_versions(self):
+        from unipkg.util import version_key as k
+
+        self.assertEqual(k("3.0.23"), k("1:3.0.23-1ubuntu2", debian=True))  # epoch/revision dropped
+        self.assertGreater(k("3.0.24"), k("3.0.24-rc1"))                     # final > pre-release
+        self.assertGreater(k("3.0.24-rc1"), k("3.0.23"))
+        self.assertLess(k("3.0.24~rc1-1", debian=True), k("3.0.24"))
+        self.assertEqual(k("1.2.0"), k("1.2"))
+        self.assertGreater(k("1.10"), k("1.9"))                               # numeric, not text
+        self.assertGreater(k("158.0-2"), k("1:157.0.1+build1-0ubuntu1", debian=True))
+        self.assertIsNone(k("6d62b1d5"))                                      # commit hash
+        self.assertIsNone(k(""))

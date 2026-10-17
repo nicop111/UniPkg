@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import time
 from collections import OrderedDict
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from .. import host
 from ..models import PackageKind, SearchResult, Trust, Verification
-from ..util import format_date, format_datetime, format_size
+from ..util import format_date, format_datetime, format_size, version_key
+
+STALE_AFTER = 365 * 86400  # a release older than this suggests the package is unmaintained
 from .common import ICONS, dim_label, error_dialog, kind_badge, run_async, trust_badge
 from .operation import run_operation
 
@@ -228,6 +231,7 @@ class CompareDialog(Adw.Dialog):
         self.items = items
         self._update_installed_state()
         self._labels: dict[tuple[int, str], Gtk.Label] = {}
+        self._stale_icons: dict[int, Gtk.Image] = {}
         self._action_boxes: dict[int, Gtk.Box] = {}
         self._trust_boxes: dict[int, Gtk.Box] = {}
 
@@ -288,8 +292,20 @@ class CompareDialog(Adw.Dialog):
                                   valign=Gtk.Align.START, wrap_mode=Pango.WrapMode.WORD_CHAR,
                                   max_width_chars=34)
                 label.add_css_class("compare-cell")
-                grid.attach(label, col, row_idx, 1, 1)
                 self._labels[(col, title_text)] = label
+                if title_text == "Latest release":
+                    # Date plus a warning icon when the last release is over a year old.
+                    cell = Gtk.Box(spacing=6, valign=Gtk.Align.START)
+                    cell.add_css_class("compare-cell-box")
+                    cell.append(label)
+                    stale = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+                    stale.add_css_class("stale-release")
+                    stale.set_visible(False)
+                    cell.append(stale)
+                    self._stale_icons[col] = stale
+                    grid.attach(cell, col, row_idx, 1, 1)
+                else:
+                    grid.attach(label, col, row_idx, 1, 1)
         self._highlight_best()
 
         btn_row = len(self.ROWS) + 1
@@ -417,14 +433,37 @@ class CompareDialog(Adw.Dialog):
             sandboxed = is_sandboxed(item)
             label.remove_css_class("sandboxed" if not sandboxed else "not-sandboxed")
             label.add_css_class("sandboxed" if sandboxed else "not-sandboxed")
+        # Newest version (normalised across formats); nothing if all are equal.
+        keys = {col: version_key(i.version, debian=i.kind in (PackageKind.APT, PackageKind.DEB))
+                for col, i in enumerate(self.items, 1)}
+        known = {col: k for col, k in keys.items() if k is not None}
+        newest = max(known.values()) if known else None
+        for col in range(1, len(self.items) + 1):
+            label = self._labels[(col, "Version")]
+            label.remove_css_class("best-value")
+            if newest is not None and len(set(known.values())) > 1 and keys[col] == newest:
+                label.add_css_class("best-value")
+                label.set_tooltip_text("Newest version of the compared formats")
+            else:
+                label.set_tooltip_text(None)
+
         released = [(i.released, col) for col, i in enumerate(self.items, 1) if i.released]
+        now = time.time()
         for col in range(1, len(self.items) + 1):
             label = self._labels[(col, "Latest release")]
             label.remove_css_class("best-value")
             item = self.items[col - 1]
-            label.set_tooltip_text(
-                format_datetime(item.released)
-                if item.released else None)
+            stale = bool(item.released and now - item.released > STALE_AFTER)
+            icon = self._stale_icons[col]
+            icon.set_visible(stale)
+            if stale:
+                years = (now - item.released) / (365 * 86400)
+                tip = (f"Last release {format_datetime(item.released)}, {years:.1f} years ago: "
+                       "this package is likely not maintained anymore and may miss security fixes.")
+                icon.set_tooltip_text(tip)
+                label.set_tooltip_text(tip)
+            else:
+                label.set_tooltip_text(format_datetime(item.released) if item.released else None)
         if len(released) > 1:
             self._labels[(max(released)[1], "Latest release")].add_css_class("best-value")
         for title_text, attr in (("Download size", "download_size"), ("Installed size", "installed_size")):
