@@ -233,5 +233,34 @@ class StreamingProcess:
             pass
 
 
+def _shell_path(path: str) -> str:
+    """Quote *path* for the host shell, expanding a leading ``~`` to ``$HOME``."""
+    if path == "~" or path.startswith("~/"):
+        return '"$HOME"' + shlex.quote(path[1:])
+    return shlex.quote(path)
+
+
+def path_sizes(paths: list[str]) -> dict[str, Optional[int]]:
+    """Size in bytes of each existing host path (missing paths are left out)."""
+    if not paths:
+        return {}
+    parts = [f'if [ -e {_shell_path(p)} ]; then printf "%s\\t" {shlex.quote(p)}; '
+             f'du -sb {_shell_path(p)} 2>/dev/null | cut -f1 || echo; fi' for p in paths]
+    res = run_shell("; ".join(parts), timeout=120)
+    sizes: dict[str, Optional[int]] = {}
+    for line in res.stdout.splitlines():
+        path, _, size = line.partition("\t")
+        sizes[path] = int(size) if size.strip().isdigit() else None
+    return sizes
+
+
+def open_folder(path: str) -> bool:
+    """Open a host folder in the user's file manager (detached from UniPkg)."""
+    cmd = f"xdg-open {_shell_path(path)} || gio open {_shell_path(path)}"
+    res = run(["sh", "-c", f"setsid -f sh -c {shlex.quote(cmd)} >/dev/null 2>&1 </dev/null"],
+              timeout=20)
+    return res.ok
+
+
 def format_argv(argv: Iterable[str]) -> str:
     return " ".join(shlex.quote(a) for a in argv)

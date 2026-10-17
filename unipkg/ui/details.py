@@ -318,6 +318,7 @@ class PackageDetailsDialog(Adw.Dialog):
     # data -------------------------------------------------------------------------
     def _build_data(self) -> None:
         group = Adw.PreferencesGroup(title="Data and storage")
+        self.data_group = group
         self.data_row = Adw.ActionRow(title="User data", subtitle="Looking for data folders…")
         self.data_row.add_prefix(Gtk.Image.new_from_icon_name("folder-symbolic"))
         group.add(self.data_row)
@@ -326,13 +327,41 @@ class PackageDetailsDialog(Adw.Dialog):
             purge.add_css_class("destructive-action")
             purge.connect("activated", lambda *_: self._confirm_uninstall(True))
             group.add(purge)
+            self._purge_row = purge
         self.page.add(group)
-        run_async(lambda: self.backend.data_locations(self.pkg) if self.backend else [],
-                  self._show_data, lambda e: self.data_row.set_subtitle(str(e)))
+        def find():
+            locations = self.backend.data_locations(self.pkg) if self.backend else []
+            return host.path_sizes(locations)
 
-    def _show_data(self, locations: list[str]) -> None:
-        self._data_locations = locations
-        self.data_row.set_subtitle("\n".join(locations) if locations else "No user data folders found")
+        run_async(find, self._show_data, lambda e: self.data_row.set_subtitle(str(e)))
+
+    def _show_data(self, sizes: dict) -> None:
+        self._data_locations = list(sizes)
+        if not sizes:
+            self.data_row.set_subtitle("No user data folders found")
+            return
+        self.data_group.remove(self.data_row)
+        for path, size in sizes.items():
+            row = Adw.ActionRow(title=path, use_markup=False, title_selectable=True,
+                                subtitle=f"{format_size(size)} of data" if size else "Data folder")
+            row.add_prefix(Gtk.Image.new_from_icon_name("folder-symbolic"))
+            button = Gtk.Button(icon_name="folder-open-symbolic", valign=Gtk.Align.CENTER,
+                                tooltip_text="Open in file manager")
+            button.add_css_class("flat")
+            button.connect("clicked", lambda _b, p=path: self._open_folder(p))
+            row.add_suffix(button)
+            row.set_activatable_widget(button)
+            self.data_group.add(row)
+        purge = getattr(self, "_purge_row", None)
+        if purge is not None:  # keep the destructive action below the folders
+            self.data_group.remove(purge)
+            self.data_group.add(purge)
+
+    def _open_folder(self, path: str) -> None:
+        def done(ok):
+            if not ok:
+                self.toast_overlay.add_toast(Adw.Toast(title=f"Could not open {path}"))
+        run_async(lambda: host.open_folder(path), done)
 
     # actions -------------------------------------------------------------------------
     def _on_update(self, *_):
