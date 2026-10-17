@@ -34,7 +34,7 @@
         {
           "type": "dir",
           "path": ".",
-          "skip": [".git", ".flatpak-builder", "build-dir", "repo", "unipkg.flatpak"]
+          "skip": [".git", ".flatpak-builder", "build-dir", "repo", "unipkg.flatpak", "screenshots"]
         }
       ]
     }

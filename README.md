@@ -9,6 +9,47 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
 | Flatpak | System and per-user installations | `flatpak` CLI, the app's metadata and overrides, the portal permission store, AppStream |
 | Snap | All installed snaps | the snapd REST API (`/run/snapd.socket`) |
 
+## Screenshots
+
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/slideshow_dark.png">
+  <img alt="UniPkg slideshow: installed apps, comparing package formats, security report" src="screenshots/slideshow_light.png" width="900">
+</picture>
+</p>
+<p align="center"><em>Installed apps → comparing the formats of an app before installing → security report</em></p>
+
+<details>
+<summary><b>Show all screenshots</b></summary>
+
+### Installed apps
+One list for APT, local .deb, Flatpak and Snap packages: sortable columns, checkbox filters for type, source and permissions, and bulk uninstall.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/app_list_dark.png">
+  <img alt="Installed apps list" src="screenshots/app_list_light.png" width="900">
+</picture>
+
+### Comparing package formats
+When an app exists in several formats, compare version, release date, size, sandboxing, permissions and verification before installing.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/install_compare_packages_dark.png">
+  <img alt="Comparison of the Flatpak, Snap and APT versions of an app" src="screenshots/install_compare_packages_light.png" width="900">
+</picture>
+
+### Security report
+Installed apps ranked by risk, with an explanation for every finding.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/risk_dark.png">
+  <img alt="Security report with risk ranking" src="screenshots/risk_light.png" width="900">
+</picture>
+
+</details>
+
+Screenshots follow GitHub's light or dark theme.
+
 ## Installation
 
 UniPkg is not on Flathub or the Snap Store yet. You build the Flatpak yourself, which takes a few minutes and installs it for your user only. It runs on Debian, Ubuntu and their derivatives; other distributions lack APT.
@@ -171,6 +212,7 @@ unipkg/
   backends/        apt.py (APT + local .deb), flatpak.py, snap.py, gpg.py
   ui/              window, installed list, details, explore/compare, updates, repositories, security
 data/              desktop file, AppStream metainfo, icon
+screenshots/       README screenshots (light/dark); build-aux/make-slideshow.py builds the slideshows
 io.github.unipkg.UniPkg.json   Flatpak manifest
 ```
 
