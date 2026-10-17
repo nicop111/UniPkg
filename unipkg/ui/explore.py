@@ -449,7 +449,8 @@ def _confirm_deb(parent, manager, host_path: str, info: dict) -> None:
     def on_response(_d, response):
         if response == "install":
             run_operation(parent, manager, f"Installing {info.get('Package')}",
-                          manager.apt.install_file(host_path), lambda ok: ok and manager.reload())
+                          manager.apt.install_file(host_path, info.get("Package", "")),
+                          lambda ok: ok and manager.reload())
 
     dialog.connect("response", on_response)
     dialog.present(parent)

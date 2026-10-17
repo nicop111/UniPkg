@@ -264,6 +264,25 @@ def parse_policy_origins(text: str) -> dict[str, str]:
     return origins
 
 
+BROKEN_STATES = {"half-installed", "unpacked", "half-configured", "triggers-awaited", "triggers-pending"}
+
+
+def parse_dpkg_errors(output: str) -> list[str]:
+    """Packages listed after dpkg's "Errors were encountered while processing:"."""
+    failed: list[str] = []
+    collecting = False
+    for line in output.splitlines():
+        if line.startswith("Errors were encountered while processing:"):
+            collecting = True
+            continue
+        if collecting:
+            if line.startswith((" ", "\t")) and line.strip():
+                failed.append(line.strip().split(":")[0].split(" ")[0])
+            else:
+                collecting = False
+    return failed
+
+
 def clean_maintainer(maint: str) -> str:
     return re.sub(r"\s*<[^>]*>", "", maint).strip()
 
@@ -429,9 +448,80 @@ done
                 "Full system access",
                 f"Installs {result.extra['new_packages']} packages incl. dependencies"]
 
+    # Outcome checks -----------------------------------------------------------
+    # apt-get also finishes configuring packages that were left half-installed
+    # by earlier runs. When one of those fails, apt exits with an error even
+    # though the requested change succeeded. These checks look at the actual
+    # package state so such runs are reported as warnings, not failures.
+
+    def package_states(self, names: list[str]) -> dict[str, tuple[str, str]]:
+        """Return ``name -> (dpkg status, version)``; unknown packages are omitted."""
+        if not names:
+            return {}
+        res = host.run(["dpkg-query", "-W", "-f", "${Package}\t${db:Status-Status}\t${Version}\n",
+                        *names], timeout=30)
+        states = {}
+        for line in res.stdout.splitlines():
+            cols = line.split("\t")
+            if len(cols) == 3:
+                states[cols[0]] = (cols[1], cols[2])
+        return states
+
+    def broken_packages(self) -> list[str]:
+        """Packages dpkg left half-installed or unconfigured."""
+        res = host.run(["dpkg-query", "-W", "-f", "${Package}\t${db:Status-Status}\n"], timeout=60)
+        return [cols[0] for cols in (l.split("\t") for l in res.stdout.splitlines())
+                if len(cols) == 2 and cols[1] in BROKEN_STATES]
+
+    def _outcome_check(self, names: list[str], expect: str, old_versions: Optional[dict[str, str]] = None):
+        """Build an ``on_failure`` hook for :class:`Command`.
+
+        *expect* is ``installed``, ``removed``, ``purged``, ``upgraded`` or
+        ``any`` (only tolerate failures of other, already broken packages).
+        """
+        targets = [n.split(":")[0] for n in names]
+
+        def check(_code: int, output: str) -> Optional[str]:
+            failed = parse_dpkg_errors(output)
+            others = [f for f in failed if f not in targets]
+            if any(f in targets for f in failed):
+                return None
+            states = self.package_states(targets)
+            leftover: list[str] = []
+            for name in targets:
+                status, version = states.get(name, ("not-installed", ""))
+                if expect == "installed" and status != "installed":
+                    return None
+                if expect == "upgraded" and (status != "installed" or
+                                             version == (old_versions or {}).get(name)):
+                    return None
+                if expect in ("removed", "purged") and status not in ("not-installed", "config-files"):
+                    return None
+                if expect == "purged" and status == "config-files":
+                    leftover.append(name)
+            if expect == "any" and not others:
+                return None
+            broken = set(self.broken_packages())
+            if expect == "any" and not set(others) <= broken:
+                return None
+            msg = "The requested change was applied"
+            if others:
+                msg += (", but other packages on this system that were already in a broken state "
+                        f"could not be configured: {', '.join(others)}. Fix them with "
+                        "“sudo dpkg --configure -a” in a terminal or remove them.")
+            else:
+                msg += f", but apt reported an error (exit status {_code})."
+            if leftover:
+                msg += (f" The configuration files of {', '.join(leftover)} were not purged because "
+                        "dpkg stopped early; purge again once the broken packages are fixed.")
+            return msg
+
+        return check
+
     def install(self, result: SearchResult) -> list[Command]:
         return [Command(f"Install {result.name} (APT)",
-                        host.privileged(["apt-get", "install", *APT_OPTS, result.name], APT_ENV))]
+                        host.privileged(["apt-get", "install", *APT_OPTS, result.name], APT_ENV),
+                        on_failure=self._outcome_check([result.name], "installed"))]
 
     def inspect_deb(self, host_path: str) -> dict:
         """Inspect a local .deb file and check it against the repositories."""
@@ -476,9 +566,10 @@ done
                     Trust.UNVERIFIED: "Unverified local package"}[trust], checks)
         return info
 
-    def install_file(self, host_path: str) -> list[Command]:
+    def install_file(self, host_path: str, package: str = "") -> list[Command]:
         return [Command(f"Install {os.path.basename(host_path)}",
-                        host.privileged(["apt-get", "install", *APT_OPTS, host_path], APT_ENV))]
+                        host.privileged(["apt-get", "install", *APT_OPTS, host_path], APT_ENV),
+                        on_failure=self._outcome_check([package], "installed") if package else None)]
 
     def simulate_removal(self, pkg: Package, purge: bool) -> list[str]:
         res = host.run(["apt-get", "-s", "purge" if purge else "remove", pkg.name], timeout=60)
@@ -488,7 +579,8 @@ done
         verb = "purge" if delete_data else "remove"
         script = f"apt-get {verb} {' '.join(shlex.quote(o) for o in APT_OPTS)} {shlex.quote(pkg.name)}"
         cmds = [Command(f"{verb.capitalize()} {pkg.name}",
-                        host.privileged(["sh", "-c", script], APT_ENV))]
+                        host.privileged(["sh", "-c", script], APT_ENV),
+                        on_failure=self._outcome_check([pkg.name], "purged" if delete_data else "removed"))]
         if delete_data:
             for loc in self.data_locations(pkg):
                 path = loc.replace("~", "$HOME", 1)
@@ -524,17 +616,23 @@ done
     def update(self, pkg: Package) -> list[Command]:
         return [Command(f"Upgrade {pkg.name}",
                         host.privileged(["apt-get", "install", "--only-upgrade", *APT_OPTS, pkg.name],
-                                        APT_ENV))]
+                                        APT_ENV),
+                        on_failure=self._outcome_check([pkg.name], "upgraded",
+                                                       {pkg.name.split(":")[0]: pkg.version}))]
 
     def update_many(self, pkgs: list[Package]) -> list[Command]:
         return [Command(f"Upgrade {len(pkgs)} APT packages",
                         host.privileged(["apt-get", "install", "--only-upgrade", *APT_OPTS,
-                                         *[p.name for p in pkgs]], APT_ENV))]
+                                         *[p.name for p in pkgs]], APT_ENV),
+                        on_failure=self._outcome_check(
+                            [p.name for p in pkgs], "upgraded",
+                            {p.name.split(":")[0]: p.version for p in pkgs}))]
 
     def update_all(self) -> list[Command]:
         script = (f"apt-get update && apt-get upgrade --with-new-pkgs "
                   f"{' '.join(shlex.quote(o) for o in APT_OPTS)}")
-        return [Command("Upgrade all APT packages", host.privileged(["sh", "-c", script], APT_ENV))]
+        return [Command("Upgrade all APT packages", host.privileged(["sh", "-c", script], APT_ENV),
+                        on_failure=self._outcome_check([], "any"))]
 
     # Verification -----------------------------------------------------------------
     def verify(self, pkg: Package, deep: bool = False) -> Verification:

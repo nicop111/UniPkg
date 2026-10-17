@@ -374,6 +374,19 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
                 extra_label.add_css_class("warning")
         run_async(lambda: backend.simulate_removal(pkg, delete_data), show_removals)
 
+        broken_label = Gtk.Label(xalign=0, wrap=True, visible=False)
+        broken_label.add_css_class("caption")
+        broken_label.add_css_class("warning")
+        box.append(broken_label)
+
+        def show_broken(names):
+            if names:
+                broken_label.set_label(
+                    f"⚠ These packages are not fully installed: {', '.join(names)}. apt will try to "
+                    "configure them again and may report errors that are unrelated to this removal.")
+                broken_label.set_visible(True)
+        run_async(backend.broken_packages, show_broken)
+
     def on_response(_d, response):
         if response != "remove":
             return

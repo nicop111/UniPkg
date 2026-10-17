@@ -21,6 +21,10 @@ class Command:
 
     Either *argv* is executed on the host (output is streamed to the UI) or
     *func* is called in the worker thread; it may return a string to log.
+
+    If the command exits with an error, *on_failure(exit_code, output)* (when
+    set) decides whether the requested change happened anyway: it returns a
+    warning message to continue with, or ``None`` for a real failure.
     """
 
     description: str
@@ -28,6 +32,7 @@ class Command:
     env: dict[str, str] = field(default_factory=dict)
     func: Optional[Callable[[], Optional[str]]] = None
     allow_failure: bool = False
+    on_failure: Optional[Callable[[int, str], Optional[str]]] = None
 
 
 class BackendError(RuntimeError):

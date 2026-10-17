@@ -46,8 +46,12 @@ class OperationDialog(Adw.Dialog):
         self._fail_icon = Gtk.Image.new_from_icon_name("dialog-error-symbolic")
         self._fail_icon.set_pixel_size(32)
         self._fail_icon.add_css_class("error")
+        self._warn_icon = Gtk.Image.new_from_icon_name("dialog-warning-symbolic")
+        self._warn_icon.set_pixel_size(32)
+        self._warn_icon.add_css_class("warning")
         self._status_stack.add_named(self._ok_icon, "ok")
         self._status_stack.add_named(self._fail_icon, "fail")
+        self._status_stack.add_named(self._warn_icon, "warn")
         box.append(self._status_stack)
 
         self._title = Gtk.Label(label=title, wrap=True, justify=Gtk.Justification.CENTER)
@@ -58,6 +62,9 @@ class OperationDialog(Adw.Dialog):
         box.append(self._step)
         self._progress = Gtk.ProgressBar(show_text=False)
         box.append(self._progress)
+        self._warning = Gtk.Label(wrap=True, xalign=0, visible=False, selectable=True)
+        self._warning.add_css_class("warning")
+        box.append(self._warning)
 
         self._buffer = Gtk.TextBuffer()
         view = Gtk.TextView(buffer=self._buffer, editable=False, monospace=True,
@@ -100,6 +107,7 @@ class OperationDialog(Adw.Dialog):
 
     def _worker(self) -> None:
         ok = True
+        warnings: list[str] = []
         with self._lock:
             total = len(self._commands)
             for index, cmd in enumerate(self._commands, 1):
@@ -108,6 +116,12 @@ class OperationDialog(Adw.Dialog):
                     break
                 GLib.idle_add(self._set_step, f"Step {index} of {total}: {cmd.description}")
                 GLib.idle_add(self._append, f"$ {cmd.description}")
+                output: list[str] = []
+
+                def on_line(line: str, output=output) -> None:
+                    output.append(line)
+                    GLib.idle_add(self._append, line)
+
                 try:
                     if cmd.func is not None:
                         message = cmd.func()
@@ -117,8 +131,7 @@ class OperationDialog(Adw.Dialog):
                     else:
                         assert cmd.argv is not None
                         GLib.idle_add(self._append, f"  {host.format_argv(cmd.argv)}")
-                        self._process = host.StreamingProcess(
-                            cmd.argv, lambda line: GLib.idle_add(self._append, line), cmd.env)
+                        self._process = host.StreamingProcess(cmd.argv, on_line, cmd.env)
                         code = self._process.wait()
                         self._process = None
                 except Exception as exc:  # noqa: BLE001
@@ -130,16 +143,30 @@ class OperationDialog(Adw.Dialog):
                         GLib.idle_add(self._append, "Authentication was cancelled or failed.")
                     else:
                         GLib.idle_add(self._append, f"Exit status {code}")
+                        warning = None
+                        if cmd.on_failure is not None and not self._cancelled:
+                            try:
+                                warning = cmd.on_failure(code, "\n".join(output))
+                            except Exception:  # noqa: BLE001
+                                traceback.print_exc()
+                        if warning:
+                            GLib.idle_add(self._append, f"Warning: {warning}")
+                            warnings.append(warning)
+                            continue
                     if not cmd.allow_failure:
                         ok = False
                         break
-        GLib.idle_add(self._finish, ok)
+        GLib.idle_add(self._finish, ok, warnings)
 
-    def _finish(self, ok: bool) -> bool:
+    def _finish(self, ok: bool, warnings: list[str]) -> bool:
         self._finished = True
         self._progress.set_fraction(1.0 if ok else 0.0)
-        self._status_stack.set_visible_child_name("ok" if ok else "fail")
-        if ok:
+        self._status_stack.set_visible_child_name(("warn" if warnings else "ok") if ok else "fail")
+        if ok and warnings:
+            self._step.set_label("Completed with warnings")
+            self._warning.set_label("\n\n".join(warnings))
+            self._warning.set_visible(True)
+        elif ok:
             self._step.set_label("Completed successfully")
         elif self._cancelled:
             self._step.set_label("Cancelled")
@@ -150,7 +177,7 @@ class OperationDialog(Adw.Dialog):
         self.set_can_close(True)
         if self._on_done:
             self._on_done(ok)
-        if ok:
+        if ok and not warnings:
             GLib.timeout_add(900, self._auto_close)
         return GLib.SOURCE_REMOVE
 

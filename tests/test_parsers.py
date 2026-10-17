@@ -208,6 +208,17 @@ class AptTests(unittest.TestCase):
         remaining = apt.parse_deb822_sources("f", removed)
         self.assertEqual([e.uris for e in remaining], [["https://repo.example.org"]])
 
+    def test_parse_dpkg_errors(self):
+        output = ("Removing anytype (0.53.1) ...\n"
+                  "dpkg: error processing package postfix (--configure):\n"
+                  " old postfix package postinst maintainer script subprocess failed\n"
+                  "Errors were encountered while processing:\n"
+                  " postfix\n"
+                  " bsd-mailx\n"
+                  "E: Sub-process /usr/bin/dpkg returned an error code (1)\n")
+        self.assertEqual(apt.parse_dpkg_errors(output), ["postfix", "bsd-mailx"])
+        self.assertEqual(apt.parse_dpkg_errors("all fine\n"), [])
+
     def test_inline_key_and_lists_prefix(self):
         signed_by = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n.\nmQINBF\n-----END PGP PUBLIC KEY BLOCK-----"
         key = apt.inline_key(signed_by)
