@@ -19,7 +19,11 @@ APP_ID = "io.github.unipkg.UniPkg"
 
 class Application(Adw.Application):
     def __init__(self) -> None:
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
+        flags = Gio.ApplicationFlags.HANDLES_OPEN
+        if os.environ.get("UNIPKG_SCREENSHOT"):
+            # Scripted runs must not hand over to an already running instance.
+            flags |= Gio.ApplicationFlags.NON_UNIQUE
+        super().__init__(application_id=APP_ID, flags=flags)
         GLib.set_application_name("UniPkg")
         self.manager = Manager()
         self.window = None

@@ -199,9 +199,15 @@ class PackageDetailsDialog(Adw.Dialog):
             self.perm_group.set_description(
                 "Traditional packages are not sandboxed. Their access cannot be restricted — "
                 "consider the Flatpak or Snap version if one is available.")
+        elif pkg.extra.get("devmode"):
+            self.perm_group.set_description(
+                "This snap is installed in developer mode: snapd does not enforce its sandbox, so "
+                "its permissions cannot be restricted.")
         elif pkg.extra.get("classic"):
             self.perm_group.set_description(
-                "This snap uses classic confinement and has full access to your system.")
+                "This snap uses classic confinement: it runs without a sandbox and has full access "
+                "to your system. Snapd offers no permissions to change for classic snaps — if you "
+                "need restrictions, look for a strictly confined snap or a Flatpak of this app.")
         else:
             self.perm_group.set_description(
                 "Toggle what this app may access. Changes apply the next time the app starts.")

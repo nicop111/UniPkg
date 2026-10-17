@@ -166,7 +166,8 @@ class SnapBackend(Backend):
                 confinement="Unconfined (classic)" if classic else ("Devmode (not enforced)" if devmode else "Strict confinement"),
                 trust=Trust.UNVERIFIED if local else _validation_trust(validation),
                 extra={"installation": "", "id": snap.get("id", ""), "revision": snap.get("revision", ""),
-                       "classic": classic or devmode, "type": snap.get("type", ""),
+                       "classic": classic or devmode, "devmode": devmode and not classic,
+                       "type": snap.get("type", ""),
                        "validation": validation, "channel": snap.get("tracking-channel", ""),
                        "desktop_files": desktop_files, "mounted_from": snap.get("mounted-from", ""),
                        "publisher_username": publisher.get("username", ""),
@@ -188,7 +189,7 @@ class SnapBackend(Backend):
             pkg.permissions = self._permissions_from_plugs(by_snap.get(pkg.name, []), pkg)
 
     def _permissions_from_plugs(self, plugs: list[dict], pkg: Package) -> list[Permission]:
-        perms = []
+        perms = unconfined_snap_permissions(pkg)
         for plug in sorted(plugs, key=lambda p: p["plug"]):
             iface = plug.get("interface", "")
             label, cat, sensitive = INTERFACES.get(iface, (iface.replace("-", " ").capitalize(), C.OTHER, False))
@@ -361,6 +362,34 @@ class SnapBackend(Backend):
             signed_by="Canonical store root key (built into snapd)", trust=Trust.SIGNED,
             removable=False, toggleable=False,
         )]
+
+
+def unconfined_snap_permissions(pkg: Package) -> list[Permission]:
+    """Read-only entries describing a snap that runs without a sandbox.
+
+    Classic snaps declare no interfaces at all (snapd enforces nothing for
+    them); devmode snaps declare interfaces but violations are only logged.
+    """
+    if pkg.extra.get("devmode"):
+        return [Permission(
+            "confinement:devmode", "Sandbox not enforced (devmode)", C.SYSTEM, True,
+            toggleable=False, sensitive=True,
+            description="Developer mode: the interfaces below are not enforced, the app can "
+                        "access the whole system. Reinstall it without --devmode to sandbox it.")]
+    if pkg.extra.get("classic"):
+        return [
+            Permission("confinement:classic", "Full system access (classic confinement)", C.SYSTEM,
+                       True, toggleable=False, sensitive=True,
+                       description="Classic snaps run without a sandbox, like traditional packages. "
+                                   "They can access all your files, devices and the network."),
+            Permission("confinement:files", "All your files", C.FILESYSTEM, True, toggleable=False,
+                       sensitive=True, description="Not restricted by snapd"),
+            Permission("confinement:network", "Network access", C.NETWORK, True, toggleable=False,
+                       sensitive=True, description="Not restricted by snapd"),
+            Permission("confinement:devices", "All devices (camera, microphone, USB…)", C.DEVICES,
+                       True, toggleable=False, sensitive=True, description="Not restricted by snapd"),
+        ]
+    return []
 
 
 def _sha3_384_host_file(path: str, privileged: bool = False) -> str:
