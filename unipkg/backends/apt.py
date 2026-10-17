@@ -291,6 +291,8 @@ class AptBackend(Backend):
     name = "APT"
     kinds = (PackageKind.APT, PackageKind.DEB)
 
+    security_updates: set[str] = set()  # uids whose pending update comes from a -security suite
+
     def available(self) -> bool:
         return host.which("apt-get") and host.which("dpkg-query")
 
@@ -651,9 +653,13 @@ done
     def list_updates(self) -> dict[str, str]:
         res = host.run(["apt", "list", "--upgradable"], timeout=120)
         updates = {}
+        security = set()
         for (name, arch), info in parse_apt_list(res.stdout).items():
             key = name if arch in ("all", self.native_arch) else f"{name}:{arch}"
             updates[f"apt::{key}"] = info["version"]
+            if any(suite.endswith("-security") for suite in info["suites"]):
+                security.add(f"apt::{key}")
+        self.security_updates = security
         return updates
 
     def update(self, pkg: Package) -> list[Command]:

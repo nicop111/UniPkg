@@ -399,3 +399,37 @@ class PermissionFilterTests(unittest.TestCase):
         self.assertFalse(match(unconfined, "sandboxed", set(), False))
         self.assertTrue(match(unconfined, "unrestricted", set(), False))
         self.assertFalse(match(net, "unrestricted", {"network"}, False))
+
+
+class RiskTests(unittest.TestCase):
+    def _pkg(self, kind, **kw):
+        from unipkg.models import Package, Trust
+
+        extra = kw.pop("extra", {})
+        return Package(kind=kind, name="x", display_name="x", is_app=True,
+                       trust=kw.pop("trust", Trust.SIGNED), extra=extra, **kw)
+
+    def test_levels_and_ranking(self):
+        from unipkg import risk
+        from unipkg.models import Permission, PermissionCategory as C, Trust
+
+        now = 2_000_000_000
+        local_deb = self._pkg(PackageKind.DEB, trust=Trust.UNVERIFIED, updated=now - 2 * risk.YEAR)
+        apt_sec = self._pkg(PackageKind.APT, update_version="2", source="Ubuntu (resolute)")
+        third_party = self._pkg(PackageKind.APT, source="google-chrome (stable)")
+        flatpak_ok = self._pkg(PackageKind.FLATPAK, trust=Trust.VERIFIED, updated=now)
+        flatpak_escape = self._pkg(PackageKind.FLATPAK, trust=Trust.VERIFIED, updated=now, permissions=[
+            Permission("sockets:session-bus", "x", C.BUS, True, sensitive=True),
+            Permission("filesystems:home", "x", C.FILESYSTEM, True, sensitive=True),
+            Permission("filesystems:host", "x", C.FILESYSTEM, False, sensitive=True)])  # not granted
+        classic = self._pkg(PackageKind.SNAP, trust=Trust.VERIFIED, updated=now, extra={"classic": True})
+
+        r = risk.assess(local_deb, now=now)
+        self.assertEqual(r.score, 30 + 25 + 15 + 10)
+        self.assertEqual(r.level, risk.RiskLevel.HIGH)
+        self.assertEqual(risk.assess(apt_sec, security_update=True, now=now).score, 15 + 20)
+        self.assertEqual(risk.assess(apt_sec, security_update=False, now=now).score, 15 + 5)
+        self.assertEqual(risk.assess(third_party, now=now).score, 30)
+        self.assertEqual(risk.assess(flatpak_ok, now=now).level, risk.RiskLevel.NONE)
+        self.assertEqual(risk.assess(flatpak_escape, now=now).score, 25 + 12)
+        self.assertEqual(risk.assess(classic, now=now).level, risk.RiskLevel.MEDIUM)

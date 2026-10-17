@@ -72,3 +72,15 @@
 /* Permission filter */
 .filter-active { color: @accent_color; }
 .small-toggle { padding: 2px 10px; min-height: 0; }
+
+/* Security report */
+.badge.risk-high { background: alpha(@error_color, 0.2); color: @error_color; }
+.badge.risk-medium { background: alpha(@warning_color, 0.22); color: @warning_color; }
+.badge.risk-low { background: alpha(@accent_color, 0.15); color: @accent_color; }
+.badge.risk-none { background: alpha(@success_color, 0.18); color: @success_color; }
+.risk-tile { padding: 14px 8px; }
+.risk-tile-high label.title-1 { color: @error_color; }
+.risk-tile-medium label.title-1 { color: @warning_color; }
+.risk-tile-low label.title-1 { color: @accent_color; }
+.risk-tile-none label.title-1 { color: @success_color; }
+.counter.counter-alert { background: alpha(@error_color, 0.25); color: @error_color; }

@@ -9,6 +9,7 @@ from .details import PackageDetailsDialog
 from .explore import ExplorePage
 from .installed import InstalledPage
 from .repos import RepositoriesPage
+from .security import SecurityPage
 from .updates import UpdatesPage
 
 PAGES = [
@@ -16,6 +17,7 @@ PAGES = [
     ("explore", "Explore", "system-search-symbolic"),
     ("updates", "Updates", "software-update-available-symbolic"),
     ("repositories", "Repositories", "network-server-symbolic"),
+    ("security", "Security", "security-medium-symbolic"),
 ]
 
 
@@ -39,6 +41,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.explore = ExplorePage(manager)
         self.updates = UpdatesPage(manager, self.show_details)
         self.repositories = RepositoriesPage(manager)
+        self.security = SecurityPage(manager, self.show_details, self.find_alternatives)
         # Keep only name, type and size columns on narrow (phone) screens.
         for key in ("developer", "source", "permissions", "updated", "version"):
             breakpoint.add_setter(self.installed.columns[key], "visible", False)
@@ -51,6 +54,7 @@ class MainWindow(Adw.ApplicationWindow):
             "explore": (self.explore, []),
             "updates": (self.updates, self.updates.header_widgets()),
             "repositories": (self.repositories, self.repositories.header_widgets()),
+            "security": (self.security, []),
         }
         self.nav_pages: dict[str, Adw.NavigationPage] = {}
         for key, title, _icon in PAGES:
@@ -153,6 +157,12 @@ class MainWindow(Adw.ApplicationWindow):
             self.show_page("installed")
             self.installed.search_entry.grab_focus()
 
+    def find_alternatives(self, pkg: Package) -> None:
+        """Search all formats for the app so a safer version can be chosen."""
+        self.show_page("explore")
+        self.explore.entry.set_text(pkg.display_name)
+        self.explore._on_search()
+
     def show_details(self, pkg: Package) -> None:
         PackageDetailsDialog(self.manager, pkg).present(self)
 
@@ -161,6 +171,11 @@ class MainWindow(Adw.ApplicationWindow):
         n_updates = len(m.packages_with_updates)
         self.counters["updates"].set_label(str(n_updates))
         self.counters["updates"].set_visible(n_updates > 0)
+        high = self.security.high_count
+        self.counters["security"].set_label(str(high))
+        self.counters["security"].set_visible(high > 0)
+        self.counters["security"].set_tooltip_text(f"{high} high-risk apps")
+        self.counters["security"].add_css_class("counter-alert")
         apps = sum(1 for p in m.packages if p.is_app)
         self.counters["installed"].set_label(str(apps))
         self.counters["installed"].set_visible(bool(m.packages))

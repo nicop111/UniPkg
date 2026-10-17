@@ -44,6 +44,15 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
   - APT sources, in both one-line `.list` and deb822 `.sources` format: enable, disable, remove, inspect signing keys, and add PPAs or URL repositories. When adding a repository, the signing key's fingerprint is shown before it is installed into `/etc/apt/keyrings`.
   - Flatpak remotes (system and user): enable, disable, add and remove.
   - The Snap Store is shown for information.
+- **Security report** (fifth tab): ranks installed apps by risk score, sorted highest first, as High (≥ 50), Medium (≥ 20) or Low. Findings:
+  - not sandboxed: 15 for distribution packages, 30 for third-party, local `.deb`s and classic snaps
+  - unverified origin; no automatic updates
+  - pending update (more for APT security updates)
+  - not updated for over a year
+  - publisher not verified
+  - permissions that weaken the sandbox, e.g. session bus, the Flatpak service, all files or home, all devices, X11, SSH/GPG keys
+
+  Clicking an app shows every finding with its points and what to do about it, plus shortcuts to find a safer alternative in Explore, open the app's permissions, or uninstall. Each row also has a quick uninstall button.
 - **Verification**:
   - **APT**: re-checks the signature of the repository's `InRelease` file with `gpgv` against that repository's `Signed-By` keyring. It flags `trusted=yes` repositories and shows key fingerprints and expiry dates. **Deep check** runs `dpkg --verify` to find modified files.
   - **Local `.deb`**: flagged as *unverified*, because no signed repository provides it.

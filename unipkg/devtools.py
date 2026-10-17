@@ -91,6 +91,8 @@ def run_script(app, window) -> None:
             dialog = window.get_visible_dialog()
             if dialog is not None:
                 getattr(dialog, arg)()
+        elif cmd == "risk":
+            window.security.show_assessment(window.security.assessments[int(arg)])
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:
