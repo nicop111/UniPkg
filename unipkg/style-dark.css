@@ -1,0 +1,7 @@
+/* Loaded on top of style.css when the dark style is active */
+.badge.kind-apt { color: #ffa348; }
+.badge.kind-deb { color: #f66151; }
+.badge.kind-flatpak { color: #99c1f1; }
+.badge.kind-snap { color: #8ff0a4; }
+.badge.update-badge { color: #dc8add; }
+.badge.installed-badge { color: #8ff0a4; }

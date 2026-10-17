@@ -233,10 +233,14 @@ class SnapBackend(Backend):
                 version=snap.get("version", ""), summary=snap.get("summary", ""),
                 developer=publisher.get("display-name", ""), source=f"Snap Store ({snap.get('channel', 'stable')})",
                 download_size=int(snap.get("download-size") or 0),
+                # Snaps stay compressed (squashfs) on disk: installed size == download size.
+                installed_size=int(snap.get("download-size") or 0),
                 trust=_validation_trust(publisher.get("validation", "")),
                 confinement="Unconfined (classic)" if classic else "Strict confinement",
                 installed=snap["name"] in installed,
                 extra={"classic": classic, "validation": publisher.get("validation", ""),
+                       "permissions": ["Full system access (classic)"] if classic else
+                       ["Interfaces granted by the store policy; reviewable after install"],
                        "icon_url": snap.get("icon", ""), "license": snap.get("license", ""),
                        "common_ids": snap.get("common-ids", [])},
             ))

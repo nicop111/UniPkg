@@ -1,0 +1,68 @@
+/* Package type badges */
+.badge {
+  font-size: 0.78em;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: alpha(currentColor, 0.1);
+}
+.badge.kind-apt { background: alpha(#e66100, 0.18); color: #c64600; }
+.badge.kind-deb { background: alpha(#c01c28, 0.16); color: #c01c28; }
+.badge.kind-flatpak { background: alpha(#3584e4, 0.18); color: #1c71d8; }
+.badge.kind-snap { background: alpha(#26a269, 0.18); color: #1f8c55; }
+.badge.update-badge { background: alpha(#9141ac, 0.18); color: #813d9c; }
+.badge.installed-badge { background: alpha(#26a269, 0.18); color: #1f8c55; }
+
+/* Trust badges */
+.trust {
+  font-size: 0.82em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.trust image { -gtk-icon-size: 12px; }
+.trust-verified { background: alpha(@success_color, 0.18); color: @success_color; }
+.trust-signed { background: alpha(@accent_color, 0.15); color: @accent_color; }
+.trust-unverified { background: alpha(@warning_color, 0.2); color: @warning_fg_color; color: @warning_color; }
+.trust-warning { background: alpha(@error_color, 0.18); color: @error_color; }
+.trust-unknown { background: alpha(currentColor, 0.08); }
+
+.trust-icon-verified { color: @success_color; }
+.trust-icon-signed { color: @accent_color; }
+.trust-icon-unverified { color: @warning_color; }
+.trust-icon-warning { color: @error_color; }
+
+/* Permission column */
+.perm-high image { color: @error_color; }
+.perm-medium image { color: @warning_color; }
+.perm-low image { color: @success_color; }
+
+.sensitive-perm { }
+
+/* Lists */
+.package-list { background: transparent; }
+.package-list > listview > row { padding-left: 6px; padding-right: 6px; }
+
+.counter {
+  font-size: 0.8em;
+  font-weight: 700;
+  min-width: 18px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: alpha(currentColor, 0.12);
+}
+
+.big-search { min-height: 42px; font-size: 1.1em; }
+
+/* Compare dialog */
+.compare-key { padding: 10px 12px 10px 0; }
+.compare-cell { padding: 10px 0; }
+.compare-grid > label.compare-key,
+.compare-grid > label.compare-cell { border-top: 1px solid alpha(currentColor, 0.08); }
+.best-value { color: @success_color; font-weight: 700; }
+
+.op-log { font-size: 0.85em; background: transparent; }
+
+.disabled-repo { opacity: 0.65; }
+
+.property { }

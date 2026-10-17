@@ -235,5 +235,5 @@ def normalize_name(name: str) -> str:
     name = name.lower().strip()
     if name.count(".") >= 2 and " " not in name:
         name = name.rsplit(".", 1)[-1]  # reverse DNS app id
-    name = re.sub(r"[-_ ]?(desktop|browser|bin|app)$", "", name)
+    name = re.sub(r"[-_ ](desktop|app)$", "", name)
     return re.sub(r"[^a-z0-9]", "", name)

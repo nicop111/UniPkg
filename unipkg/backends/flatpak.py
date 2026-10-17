@@ -460,13 +460,10 @@ class FlatpakBackend(Backend):
         )]
 
     def reset_permissions(self, pkg: Package) -> list[Command]:
-        cmds = [Command("Reset sandbox overrides",
+        # Only the sandbox overrides are reset; decisions stored in the portal
+        # permission store (notifications, background, …) are left untouched.
+        return [Command("Reset sandbox overrides",
                         ["flatpak", "override", "--user", "--reset", pkg.name])]
-        for table, _ident, *_ in PORTAL_PERMS.values():
-            cmds.append(Command(f"Reset {table} portal decision",
-                                ["flatpak", "permission-remove", table, _ident, pkg.name],
-                                allow_failure=True))
-        return cmds
 
     # Search / install ---------------------------------------------------------
     def search(self, query: str) -> list[SearchResult]:

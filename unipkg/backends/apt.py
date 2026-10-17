@@ -25,7 +25,7 @@ from ..models import (
     Verification,
     VerificationCheck,
 )
-from ..util import parse_deb822
+from ..util import parse_deb822, parse_size
 from .base import Backend, BackendError, Command
 from .gpg import KeyInfo, key_data_keys, keyring_keys
 
@@ -408,6 +408,24 @@ done
                        "sources": sources},
             ))
         return results
+
+    def enrich(self, result: SearchResult) -> None:
+        """Compute download/installed size including missing dependencies."""
+        res = host.run(["apt-get", "install", "--print-uris", "-y", result.name], timeout=60)
+        for line in res.stdout.splitlines():
+            m = re.match(r"^Need to get ([\d.,]+ \w+)", line)
+            if m:
+                result.download_size = parse_size(m.group(1))
+            m = re.match(r"^After this operation, ([\d.,]+ \w+) of additional", line)
+            if m:
+                result.installed_size = parse_size(m.group(1))
+            m = re.match(r"^\d+ upgraded, (\d+) newly installed", line)
+            if m:
+                result.extra["new_packages"] = int(m.group(1))
+        if result.extra.get("new_packages", 0) > 1:
+            result.extra["permissions"] = [
+                "Full system access",
+                f"Installs {result.extra['new_packages']} packages incl. dependencies"]
 
     def install(self, result: SearchResult) -> list[Command]:
         return [Command(f"Install {result.name} (APT)",
