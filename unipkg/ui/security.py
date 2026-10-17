@@ -37,10 +37,22 @@ class SecurityPage(Gtk.Box):
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18, margin_top=18,
                           margin_bottom=24, margin_start=12, margin_end=12)
-        intro = dim_label("Installed apps ranked by risk: missing sandbox, unverified origin, "
-                          "pending security updates and permissions that weaken the sandbox. "
-                          "Click an app to see why it was ranked.", wrap=True)
+        intro = dim_label("Installed apps (or all packages) ranked by risk: missing sandbox, "
+                          "unverified origin, obsolete packages without security updates, pending "
+                          "security updates and permissions that weaken the sandbox. Click an entry "
+                          "to see why it was ranked.", wrap=True)
         content.append(intro)
+
+        controls = Gtk.Box(spacing=8)
+        self.scope_dd = Gtk.DropDown.new_from_strings(["Applications", "All packages"])
+        self.scope_dd.set_tooltip_text("Assess only applications or every installed package, "
+                                       "including libraries and system components")
+        self.scope_dd.connect("notify::selected", lambda *_: self.rebuild())
+        controls.append(self.scope_dd)
+        self.search = Gtk.SearchEntry(placeholder_text="Filter the report…", hexpand=True)
+        self.search.connect("search-changed", lambda *_: self._apply_search())
+        controls.append(self.search)
+        content.append(controls)
 
         self.tiles = Gtk.Box(spacing=12, homogeneous=True)
         self._tile_labels: dict[RiskLevel, Gtk.Label] = {}
@@ -91,7 +103,8 @@ class SecurityPage(Gtk.Box):
             self.stack.set_visible_child_name("loading")
             return
         security = getattr(self.manager.apt, "security_updates", set()) if self.manager.apt else set()
-        self.assessments = assess_all(self.manager.packages, security)
+        self.assessments = assess_all(self.manager.packages, security,
+                                      include_all=self.scope_dd.get_selected() == 1)
         counts = {level: 0 for level in RiskLevel}
         for a in self.assessments:
             counts[a.level] += 1
@@ -107,13 +120,30 @@ class SecurityPage(Gtk.Box):
             if a.level != RiskLevel.NONE:
                 self.list.append(self._row(a))
         clean = counts[RiskLevel.NONE]
-        self.clean_label.set_label(f"{clean} app{'s' if clean != 1 else ''} with no findings are not listed."
+        noun = "package" if self.scope_dd.get_selected() == 1 else "app"
+        self.clean_label.set_label(f"{clean} {noun}{'s' if clean != 1 else ''} with no findings are not listed."
                                    if clean else "")
+        self._apply_search()
         self.stack.set_visible_child_name("list")
+        root = self.get_root()
+        if hasattr(root, "_update_status"):
+            root._update_status()  # sidebar counter follows the chosen scope
+
+    def _apply_search(self) -> None:
+        query = self.search.get_text().strip().lower()
+        row = self.list.get_first_child()
+        while row is not None:
+            a = getattr(row, "_assessment", None)
+            if a is not None:
+                hay = f"{a.pkg.display_name} {a.pkg.name} {a.summary}".lower()
+                row.set_visible(all(w in hay for w in query.split()))
+            row = row.get_next_sibling()
 
     def _row(self, a: RiskAssessment) -> Gtk.ListBoxRow:
         pkg = a.pkg
-        row = Adw.ActionRow(title=pkg.display_name, subtitle=a.summary, activatable=True,
+        title = pkg.display_name if pkg.display_name == pkg.name or pkg.is_app else \
+            f"{pkg.display_name} ({pkg.name})"
+        row = Adw.ActionRow(title=title, subtitle=a.summary, activatable=True,
                             use_markup=False, subtitle_lines=2)
         check = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=pkg.uid in self.selection,
                                 tooltip_text="Select for bulk uninstall")
@@ -146,7 +176,15 @@ class SecurityPage(Gtk.Box):
                 check.set_active(active)  # set() ignores no-op changes, so no loop
 
     def select_all_listed(self) -> None:
-        self.selection.replace(set(self._checks))
+        """Select every row that is currently shown (respects the search)."""
+        uids = set()
+        row = self.list.get_first_child()
+        while row is not None:
+            a = getattr(row, "_assessment", None)
+            if a is not None and row.get_visible():
+                uids.add(a.pkg.uid)
+            row = row.get_next_sibling()
+        self.selection.replace(self.selection.uids | uids)
 
     def uninstall_selected(self) -> None:
         pkgs = [a.pkg for a in self.assessments if a.pkg.uid in self.selection]

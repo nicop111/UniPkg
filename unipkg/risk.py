@@ -109,7 +109,8 @@ DISTRIBUTION_ORIGINS = ("Ubuntu", "Debian", "Linux Mint", "elementary", "Pop!_OS
 def is_distribution_package(pkg: Package) -> bool:
     """Whether an APT package comes from the distribution's own archive."""
     source = pkg.source
-    return source.startswith(DISTRIBUTION_ORIGINS) or source == "Repository (superseded version)"
+    return (source.startswith(DISTRIBUTION_ORIGINS) or source == "Repository (superseded version)"
+            or bool(pkg.extra.get("obsolete")))
 
 
 def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] = None) -> RiskAssessment:
@@ -117,9 +118,23 @@ def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] 
     result = RiskAssessment(pkg)
     add = result.factors.append
     alternative = "Look for a sandboxed Flatpak or Snap version of this app."
+    # Base, content and system snaps (core22, gnome-…, snapd) are not apps run by the user.
+    snap_system = pkg.kind == PackageKind.SNAP and pkg.extra.get("type") not in (None, "app")
+
+    # --- obsolete distribution packages ------------------------------------------
+    if pkg.extra.get("obsolete"):
+        add(RiskFactor("Obsolete, no security updates", 25,
+                       "This package is left over from an earlier release of your distribution. "
+                       "It is no longer published in the archive, so it no longer receives "
+                       "security updates.",
+                       "If nothing needs it anymore, uninstall it"
+                       + (" (it was installed automatically; “sudo apt autoremove” removes such "
+                          "leftovers)." if pkg.auto_installed else ".")))
 
     # --- sandboxing ------------------------------------------------------
-    if pkg.kind == PackageKind.APT and is_distribution_package(pkg):
+    if pkg.kind == PackageKind.APT and is_distribution_package(pkg) and not pkg.is_app:
+        pass  # libraries and system components of the OS itself are never sandboxed
+    elif pkg.kind == PackageKind.APT and is_distribution_package(pkg):
         add(RiskFactor("Not sandboxed", 15,
                        "This package comes from your distribution's signed archive and receives its "
                        "security updates, but it runs with all of your permissions: it can read "
@@ -142,13 +157,15 @@ def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] 
     # --- origin / signatures ----------------------------------------------
     if pkg.kind == PackageKind.DEB:
         add(RiskFactor("Unverified origin", 25,
-                       "This package was installed from a downloaded .deb file that no configured "
-                       "repository provides, so there is no signature proving where it came from.",
+                       "No configured repository provides this version: it was installed from a "
+                       "downloaded .deb file, or its repository was removed or disabled. Its origin "
+                       "can no longer be verified with a repository signature.",
                        "Prefer software from a signed repository, Flathub or the Snap Store."))
         add(RiskFactor("No automatic updates", 15,
-                       "Packages installed from files are not updated by the system, so security "
-                       "fixes are missed unless you install new versions by hand.",
-                       "Add the vendor's signed repository or switch to a Flatpak/Snap."))
+                       "Without an enabled repository the system does not update this package, so "
+                       "security fixes are missed unless you install new versions by hand.",
+                       "Re-enable or add the vendor's signed repository, switch to a Flatpak/Snap, "
+                       "or uninstall it if you no longer need it."))
     elif pkg.kind == PackageKind.SNAP and pkg.extra.get("revision", "").startswith("x"):
         add(RiskFactor("Unverified origin", 25,
                        "This snap was installed from a local file with --dangerous; it is not signed "
@@ -170,11 +187,11 @@ def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] 
         if security_update:
             add(RiskFactor("Security update pending", 20,
                            f"Version {pkg.update_version} fixes security issues and is waiting to be "
-                           "installed.", "Update this app on the Updates page."))
+                           "installed.", "Install it on the Updates page."))
         else:
             add(RiskFactor("Update pending", 5,
                            f"Version {pkg.update_version} is available; updates often include "
-                           "security fixes.", "Update this app."))
+                           "security fixes.", "Install it on the Updates page."))
     if (pkg.kind in (PackageKind.DEB, PackageKind.FLATPAK, PackageKind.SNAP)
             and pkg.updated and now - pkg.updated > YEAR):
         years = (now - pkg.updated) / YEAR
@@ -183,7 +200,8 @@ def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] 
                        "and miss security fixes.", "Check whether the app is still maintained."))
 
     # --- weakened sandbox ------------------------------------------------------
-    if pkg.kind in (PackageKind.FLATPAK, PackageKind.SNAP) and not pkg.extra.get("classic"):
+    if (pkg.kind in (PackageKind.FLATPAK, PackageKind.SNAP) and not pkg.extra.get("classic")
+            and not snap_system):
         seen_titles = set()
         for perm in pkg.permissions:
             if not perm.granted:
@@ -196,9 +214,11 @@ def assess(pkg: Package, *, security_update: bool = False, now: Optional[float] 
     return result
 
 
-def assess_all(packages: list[Package], security_updates: set[str]) -> list[RiskAssessment]:
+def assess_all(packages: list[Package], security_updates: set[str],
+               include_all: bool = False) -> list[RiskAssessment]:
+    """Assess applications, or every installed package with ``include_all``."""
     now = time.time()
     results = [assess(p, security_update=p.uid in security_updates, now=now)
-               for p in packages if p.is_app]
+               for p in packages if include_all or p.is_app]
     results.sort(key=lambda r: (-r.score, r.pkg.display_name.lower()))
     return results

@@ -462,3 +462,27 @@ class BulkUninstallTests(unittest.TestCase):
         cmds = ap.uninstall_many([self._pkg(PackageKind.APT, "foo"), self._pkg(PackageKind.DEB, "bar")], False)
         self.assertEqual(len(cmds), 1)  # one apt-get run, one password prompt
         self.assertTrue(cmds[0].argv[-1].endswith("foo bar"))
+
+
+class ObsoletePackageTests(unittest.TestCase):
+    def test_distribution_maintainer(self):
+        self.assertTrue(apt.is_distribution_maintainer(
+            "Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>"))
+        self.assertTrue(apt.is_distribution_maintainer("Debian X Team <team@debian.org>"))
+        self.assertFalse(apt.is_distribution_maintainer("Docker <support@docker.com>"))
+        self.assertFalse(apt.is_distribution_maintainer("Unknown"))
+
+    def test_obsolete_library_risk(self):
+        from unipkg import risk
+        from unipkg.models import Package
+
+        lib = Package(kind=PackageKind.APT, name="libicu74", display_name="libicu74",
+                      source=apt.OBSOLETE_SOURCE, auto_installed=True, extra={"obsolete": True})
+        current_lib = Package(kind=PackageKind.APT, name="libc6", display_name="libc6",
+                              source="Ubuntu (resolute)")
+        r = risk.assess(lib)
+        self.assertEqual([f.title for f in r.factors], ["Obsolete, no security updates"])
+        self.assertIn("autoremove", r.factors[0].recommendation)
+        self.assertEqual(risk.assess(current_lib).factors, [])  # OS libraries are not flagged
+        self.assertEqual(len(risk.assess_all([lib, current_lib], set())), 0)  # not apps
+        self.assertEqual(len(risk.assess_all([lib, current_lib], set(), include_all=True)), 2)

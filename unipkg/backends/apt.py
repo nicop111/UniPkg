@@ -283,6 +283,18 @@ def parse_dpkg_errors(output: str) -> list[str]:
     return failed
 
 
+OBSOLETE_SOURCE = "Obsolete (no longer in the archive)"
+_DISTRO_MAINTAINER_DOMAINS = ("@lists.ubuntu.com", "@ubuntu.com", "@canonical.com", "@debian.org",
+                              "@lists.debian.org", "@packages.debian.org", "@alioth-lists.debian.net")
+
+
+def is_distribution_maintainer(maint: str) -> bool:
+    """Whether a package is maintained by the distribution (Ubuntu / Debian)."""
+    email = re.search(r"<([^>]+)>", maint)
+    address = (email.group(1) if email else maint).lower()
+    return address.endswith(_DISTRO_MAINTAINER_DOMAINS)
+
+
 def clean_maintainer(maint: str) -> str:
     return re.sub(r"\s*<[^>]*>", "", maint).strip()
 
@@ -315,8 +327,13 @@ class AptBackend(Backend):
             info = apt_list.get((name, arch)) or apt_list.get((name, "all")) or {}
             flags = info.get("flags", [])
             local = "local" in flags
+            # "local" also covers packages left over from an earlier release of the
+            # distribution (no longer in the archive); those are not downloaded files.
+            obsolete = local and is_distribution_maintainer(maint)
             suites = info.get("suites", [])
-            if local:
+            if obsolete:
+                source = OBSOLETE_SOURCE
+            elif local:
                 source = "Local file"
             elif suites:
                 origin = origins.get(f"archive:{suites[0]}", "")
@@ -327,7 +344,7 @@ class AptBackend(Backend):
                 source = "Unknown"
             entry = desktop.get(name)
             pkg = Package(
-                kind=PackageKind.DEB if local else PackageKind.APT,
+                kind=PackageKind.DEB if local and not obsolete else PackageKind.APT,
                 name=name if arch in ("all", self.native_arch) else f"{name}:{arch}",
                 display_name=(entry or {}).get("Name") or name,
                 version=version, summary=summary, developer=clean_maintainer(maint),
@@ -336,9 +353,9 @@ class AptBackend(Backend):
                 icon_name=(entry or {}).get("Icon"),
                 permissions=unconfined_permissions(local),
                 confinement="Not sandboxed",
-                trust=Trust.UNVERIFIED if local else Trust.SIGNED,
+                trust=(Trust.UNKNOWN if obsolete else Trust.UNVERIFIED) if local else Trust.SIGNED,
                 extra={"installation": "", "arch": arch, "section": section, "homepage": homepage,
-                       "suites": suites, "package": name,
+                       "suites": suites, "package": name, "obsolete": obsolete,
                        "desktop_file": (entry or {}).get("_file", "")},
             )
             pkg.updated = updated.get(f"{name}:{arch}") or updated.get(name)
@@ -706,6 +723,13 @@ done
             entries = self._source_entries()
             for uri, suite in cand_sources[:1]:
                 checks.extend(self._verify_release(uri, suite.split("/")[0], _find_entry(entries, uri, suite.split("/")[0])))
+        elif not sources and pkg.extra.get("obsolete"):
+            checks.append(VerificationCheck(
+                "Installed version available from a repository", False,
+                "This package is left over from an earlier release of your distribution and is no "
+                "longer published, so its signature can no longer be checked and it receives no "
+                "security updates. Remove it if nothing needs it."))
+            trust = Trust.UNVERIFIED
         elif not sources:
             checks.append(VerificationCheck(
                 "Installed version available from a repository", False,

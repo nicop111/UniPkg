@@ -113,6 +113,10 @@ def run_script(app, window) -> None:
             window.installed.source_button.set_selected(set(arg.split("|")) if arg else set())
         elif cmd == "popup":
             getattr(window.installed, arg).popup()
+        elif cmd == "secscope":
+            window.security.scope_dd.set_selected(int(arg))
+        elif cmd == "secsearch":
+            window.security.search.set_text(arg)
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:

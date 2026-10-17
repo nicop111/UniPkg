@@ -48,13 +48,15 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
   - APT sources, in both one-line `.list` and deb822 `.sources` format: enable, disable, remove, inspect signing keys, and add PPAs or URL repositories. When adding a repository, the signing key's fingerprint is shown before it is installed into `/etc/apt/keyrings`.
   - Flatpak remotes (system and user): enable, disable, add and remove.
   - The Snap Store is shown for information.
-- **Security report** (fifth tab): ranks installed apps by risk score, sorted highest first, as High (≥ 50), Medium (≥ 20) or Low. Findings:
+- **Security report** (fifth tab): ranks installed apps, or with **All packages** every installed package, by risk score, sorted highest first, as High (≥ 50), Medium (≥ 20) or Low. Findings:
   - not sandboxed: 15 for distribution packages, 30 for third-party, local `.deb`s and classic snaps
   - unverified origin; no automatic updates
   - pending update (more for APT security updates)
   - not updated for over a year
   - publisher not verified
   - permissions that weaken the sandbox, e.g. session bus, the Flatpak service, all files or home, all devices, X11, SSH/GPG keys
+
+  With **All packages**, the operating system's own libraries are not flagged for lacking a sandbox. The report still covers pending security updates, third-party and locally installed packages, and **obsolete** packages: leftovers from an earlier distribution release that no longer receive security updates. These are detected as local packages maintained by Ubuntu/Debian, and the Installed list shows them as "Obsolete (no longer in the archive)" instead of "Local .deb".
 
   Clicking an app shows every finding with its points and what to do about it, plus shortcuts to find a safer alternative in Explore, open the app's permissions, or uninstall. Each row also has a quick uninstall button.
 - **Verification**:
