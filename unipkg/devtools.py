@@ -22,9 +22,10 @@ def capture(window: Gtk.Window, path: str) -> None:
         _capture_widget(window, dialog, path.removesuffix(".png") + "-dialog.png")
     # Open popovers are separate surfaces as well.
     installed = getattr(window, "installed", None)
-    popover = installed.perm_button.get_popover() if installed else None
-    if popover is not None and popover.get_visible():
-        _capture_widget(window, popover, path.removesuffix(".png") + "-popover.png")
+    for name in ("perm_button", "kind_button", "source_button"):
+        popover = getattr(installed, name).get_popover() if installed else None
+        if popover is not None and popover.get_visible():
+            _capture_widget(window, popover, path.removesuffix(".png") + "-popover.png")
 
 
 def _capture_widget(window: Gtk.Window, widget: Gtk.Widget, path: str) -> None:
@@ -78,7 +79,9 @@ def run_script(app, window) -> None:
         elif cmd == "scope":
             window.installed.scope_dd.set_selected(int(arg))
         elif cmd == "sort":
-            window.installed.sort_dd.set_selected(int(arg))
+            # sort:size or sort:updated:desc
+            key, _, order = arg.partition(":")
+            window.installed.sort_by(key, order == "desc")
         elif cmd == "scroll":
             dialog = window.get_visible_dialog()
             target = dialog if dialog is not None else window
@@ -104,6 +107,12 @@ def run_script(app, window) -> None:
             page.selection.replace(uids)
         elif cmd == "bulk":
             getattr(window, arg).uninstall_selected()
+        elif cmd == "types":
+            window.installed.kind_button.set_selected(set(arg.split(",")) if arg else set())
+        elif cmd == "sources":
+            window.installed.source_button.set_selected(set(arg.split("|")) if arg else set())
+        elif cmd == "popup":
+            getattr(window.installed, arg).popup()
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:
@@ -115,8 +124,6 @@ def run_script(app, window) -> None:
                                                    sandbox or "any")
         elif cmd == "permpopup":
             window.installed.perm_button.popup()
-        elif cmd == "reverse":
-            window.installed.sort_dir_btn.set_active(arg == "1")
         elif cmd == "size":
             w, h = arg.split("x")
             window.set_default_size(int(w), int(h))

@@ -11,7 +11,10 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
 
 ## Features
 
-- **Installed list**: one sortable, filterable list of everything on the system. You can sort by name, developer, package type, source, permissions, size and **last updated**, either from the "Sort by" menu or by clicking a column header. You can filter by text, package type, scope (applications, manually installed, or all packages), source/repository and permission. Permissions are checkboxes (network, files, camera, sound, notifications, devices, background, location, system services), combined with **Any** or **All**, plus a sandbox choice: any, sandboxed only, or unrestricted only.
+- **Installed list**: one list of everything on the system.
+  - **Sorting:** click a column header (name, developer, type, source, permissions, size, last updated, version); click again to reverse.
+  - **Filtering:** text search; scope (applications, manually installed, or all packages); checkbox lists for package type, source/repository and permissions. Unchecked means "all".
+  - **Permission filter:** checkboxes for network, files, camera, sound, notifications, devices, background, location and system services, combined with **Any** or **All**, plus a sandbox choice: any, sandboxed only, or unrestricted only.
 - **Permissions**
   - Flatpak: network, display sockets, sound, devices, Bluetooth, file system locations, D-Bus names and more. Changes are written as per-user overrides (`flatpak override --user`), and **Reset** removes them. Notifications, background, camera and location use the portal permission store (`flatpak permission-set`).
   - Snap: connect or disconnect each interface plug (`snap connect` / `snap disconnect`).

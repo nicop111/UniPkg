@@ -8,6 +8,7 @@ from gi.repository import Adw, Gio, GObject, Gtk, Pango
 
 from ..models import Package, PackageKind, PermissionCategory, Trust
 from ..util import format_date, format_datetime, format_size
+from .check_filter import CheckFilterButton
 from .common import ICONS, dim_label
 from .details import confirm_bulk_uninstall
 from .selection import Selection, SelectionBar
@@ -39,17 +40,6 @@ PERMISSION_FILTERS: list[tuple[str, str, Callable[[Package], bool]]] = [
     ("bus", "System services", lambda p: any(
         x.granted and x.sensitive and x.category == PermissionCategory.BUS for x in p.permissions)),
 ]
-
-SORT_KEYS = [
-    ("name", "Name"),
-    ("developer", "Developer"),
-    ("kind", "Package type"),
-    ("source", "Source"),
-    ("permissions", "Permissions"),
-    ("size", "Size"),
-    ("updated", "Last updated"),
-]
-
 
 def matches_permission_filter(pkg: Package, sandbox: str, keys: set[str], match_all: bool) -> bool:
     """Sandbox status must match; of the checked permissions the package needs
@@ -113,9 +103,9 @@ class InstalledPage(Gtk.Box):
         super().__init__(orientation=Gtk.Orientation.VERTICAL)
         self.manager = manager
         self._on_activate = on_activate
-        self.kinds: set[PackageKind] = set(PackageKind)
+        self.kinds: set[PackageKind] = set()  # empty = all types
         self.scope = "apps"
-        self.source = ""
+        self.sources: set[str] = set()  # empty = all sources
         self.sandbox_filter = "any"
         self.permission_keys: set[str] = set()
         self.permission_match_all = False
@@ -129,17 +119,6 @@ class InstalledPage(Gtk.Box):
                                             width_chars=24)
         self.search_entry.connect("search-changed", self._on_search)
         bar.append(self.search_entry)
-
-        kinds_box = Gtk.Box()
-        kinds_box.add_css_class("linked")
-        self._kind_buttons: dict[PackageKind, Gtk.ToggleButton] = {}
-        for kind in PackageKind:
-            btn = Gtk.ToggleButton(label=kind.label, active=True)
-            btn.set_tooltip_text(f"Show {kind.label} packages")
-            btn.connect("toggled", self._on_kind_toggled, kind)
-            kinds_box.append(btn)
-            self._kind_buttons[kind] = btn
-        bar.append(kinds_box)
         self.append(bar)
 
         bar2 = Adw.WrapBox(child_spacing=8, line_spacing=8, margin_start=12, margin_end=12,
@@ -148,27 +127,20 @@ class InstalledPage(Gtk.Box):
         self.scope_dd.set_tooltip_text("Which packages to show")
         bar2.append(self.scope_dd)
 
-        self._sources: list[str] = [""]
-        self.source_model = Gtk.StringList.new(["All sources"])
-        self.source_dd = Gtk.DropDown(model=self.source_model)
-        self.source_dd.set_tooltip_text("Filter by source / repository")
-        self.source_dd.connect("notify::selected", self._on_source)
-        bar2.append(self.source_dd)
+        self.kind_button = CheckFilterButton("All types", "Filter by package type",
+                                             self._on_kinds_changed, heading="Package type")
+        self.kind_button.set_items([(k.value, k.label) for k in PackageKind])
+        bar2.append(self.kind_button)
+
+        self.source_button = CheckFilterButton("All sources", "Filter by source / repository",
+                                               self._on_sources_changed, heading="Source")
+        bar2.append(self.source_button)
 
         self.perm_button = Gtk.MenuButton(label="Any permissions", always_show_arrow=True,
                                           tooltip_text="Filter by permission",
                                           popover=self._build_permission_popover())
         bar2.append(self.perm_button)
 
-        sort_box = Gtk.Box(spacing=6)
-        sort_box.append(Gtk.Label(label="Sort by"))
-        self.sort_dd = self._dropdown([label for _k, label in SORT_KEYS], self._on_sort_choice)
-        sort_box.append(self.sort_dd)
-        self.sort_dir_btn = Gtk.ToggleButton(icon_name="view-sort-ascending-symbolic")
-        self.sort_dir_btn.set_tooltip_text("Reverse sort order")
-        self.sort_dir_btn.connect("toggled", self._on_sort_choice)
-        sort_box.append(self.sort_dir_btn)
-        bar2.append(sort_box)
         self.summary_label = dim_label("", valign=Gtk.Align.CENTER)
         bar2.append(self.summary_label)
         self.append(bar2)
@@ -227,6 +199,8 @@ class InstalledPage(Gtk.Box):
         self.append(self.selection_bar)
 
         self.view.sort_by_column(self.columns["name"], Gtk.SortType.ASCENDING)
+        # Sorting happens by clicking the column headers; jump back to the top.
+        self.view.get_sorter().connect("changed", lambda *_: self._scroll_to_top())
         manager.connect("packages-changed", lambda *_: self.reload())
         manager.connect("updates-changed", lambda *_: self.filter.changed(Gtk.FilterChange.DIFFERENT))
         manager.connect("loading-changed", lambda *_: self._update_stack())
@@ -349,7 +323,7 @@ class InstalledPage(Gtk.Box):
     # filters ------------------------------------------------------------
     def _filter_func(self, obj, _data=None) -> bool:
         pkg: Package = obj.pkg
-        if pkg.kind not in self.kinds:
+        if self.kinds and pkg.kind not in self.kinds:
             return False
         if self.scope == "apps" and not pkg.is_app:
             return False
@@ -358,7 +332,7 @@ class InstalledPage(Gtk.Box):
                 return False
             if pkg.kind == PackageKind.SNAP and pkg.extra.get("type") not in ("app", None):
                 return False
-        if self.source and pkg.source != self.source:
+        if self.sources and pkg.source not in self.sources:
             return False
         if not matches_permission_filter(pkg, self.sandbox_filter, self.permission_keys,
                                          self.permission_match_all):
@@ -382,25 +356,19 @@ class InstalledPage(Gtk.Box):
         self.query = entry.get_text().strip().lower()
         self._refilter()
 
-    def _on_kind_toggled(self, btn, kind):
-        if btn.get_active():
-            self.kinds.add(kind)
-        else:
-            self.kinds.discard(kind)
+    def _on_kinds_changed(self, keys: set[str]) -> None:
+        self.kinds = {PackageKind(k) for k in keys}
         self._refilter()
 
     def set_kind_filter(self, kinds: Optional[set[PackageKind]]) -> None:
-        kinds = kinds or set(PackageKind)
-        for kind, btn in self._kind_buttons.items():
-            btn.set_active(kind in kinds)
+        self.kind_button.set_selected({k.value for k in kinds or ()})
 
     def _on_scope(self, dd, _pspec):
         self.scope = SCOPES[dd.get_selected()][0]
         self._refilter()
 
-    def _on_source(self, dd, _pspec):
-        idx = dd.get_selected()
-        self.source = self._sources[idx] if 0 <= idx < len(self._sources) else ""
+    def _on_sources_changed(self, keys: set[str]) -> None:
+        self.sources = keys
         self._refilter()
 
     # permission filter popover -----------------------------------------------
@@ -496,18 +464,9 @@ class InstalledPage(Gtk.Box):
             self.perm_button.remove_css_class("filter-active")
         self._refilter()
 
-    def _on_sort_choice(self, widget=None, *_args):
-        key = SORT_KEYS[self.sort_dd.get_selected()][0]
-        if widget is self.sort_dd and key == "updated" and not self.sort_dir_btn.get_active():
-            # Most recently updated first is what one usually wants.
-            self.sort_dir_btn.set_active(True)  # re-enters this handler
-            return
-        descending = self.sort_dir_btn.get_active()
-        self.sort_dir_btn.set_icon_name("view-sort-descending-symbolic" if descending
-                                        else "view-sort-ascending-symbolic")
+    def sort_by(self, key: str, descending: bool = False) -> None:
         self.view.sort_by_column(self.columns[key],
                                  Gtk.SortType.DESCENDING if descending else Gtk.SortType.ASCENDING)
-        self._scroll_to_top()
 
     def _on_row_activate(self, _view, position):
         obj = self.sort_model.get_item(position)
@@ -567,11 +526,8 @@ class InstalledPage(Gtk.Box):
                 self.selection.replace(self.selection.uids & present)
         objects = [PackageObject(p) for p in self.manager.packages]
         self.store.splice(0, self.store.get_n_items(), objects)
-        sources = sorted({p.source for p in self.manager.packages if p.source})
-        current = self.source
-        self._sources = [""] + sources
-        self.source_model.splice(0, self.source_model.get_n_items(), ["All sources"] + sources)
-        self.source_dd.set_selected(self._sources.index(current) if current in self._sources else 0)
+        sources = sorted({p.source for p in self.manager.packages if p.source}, key=str.lower)
+        self.source_button.set_items([(src, src) for src in sources])
         self._update_stack()
         self._update_summary()
 
