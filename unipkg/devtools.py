@@ -93,6 +93,18 @@ def run_script(app, window) -> None:
                 getattr(dialog, arg)()
         elif cmd == "risk":
             window.security.show_assessment(window.security.assessments[int(arg)])
+        elif cmd == "select":
+            # select:installed:3  -> enable selection mode and select the first N rows
+            page_name, _, count = arg.partition(":")
+            page = getattr(window, page_name)
+            page.set_select_mode(True)
+            if page_name == "installed":
+                uids = {page.sort_model.get_item(i).pkg.uid for i in range(int(count or 0))}
+            else:
+                uids = {a.pkg.uid for a in page.assessments[:int(count or 0)]}
+            page.selection.replace(uids)
+        elif cmd == "bulk":
+            getattr(window, arg).uninstall_selected()
         elif cmd == "close":
             dialog = window.get_visible_dialog()
             if dialog is not None:

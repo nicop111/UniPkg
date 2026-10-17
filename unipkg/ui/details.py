@@ -420,3 +420,56 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
     dialog.connect("response", on_response)
     dialog.present(parent)
 
+
+
+def confirm_bulk_uninstall(parent: Gtk.Widget, manager, pkgs: list[Package], on_done=None) -> None:
+    """Confirm and uninstall several packages, batched per package format."""
+    if len(pkgs) == 1:
+        confirm_uninstall(parent, manager, pkgs[0], False, on_done)
+        return
+    dialog = Adw.AlertDialog(heading=f"Uninstall {len(pkgs)} apps?",
+                             body="These apps will be removed from this computer:")
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+    names = Gtk.Label(label="\n".join(f"• {p.display_name} ({p.kind.label})" for p in pkgs),
+                      xalign=0, wrap=True)
+    scroller = Gtk.ScrolledWindow(child=names, min_content_height=min(220, 22 * len(pkgs)),
+                                  hscrollbar_policy=Gtk.PolicyType.NEVER, propagate_natural_height=True)
+    box.append(scroller)
+    check = Gtk.CheckButton(label="Also delete app data and settings")
+    box.append(check)
+    warn = Gtk.Label(xalign=0, wrap=True, visible=False)
+    warn.add_css_class("caption")
+    warn.add_css_class("warning")
+    box.append(warn)
+    dialog.set_extra_child(box)
+    dialog.add_response("cancel", "Cancel")
+    dialog.add_response("remove", f"Uninstall {len(pkgs)} Apps")
+    dialog.set_response_appearance("remove", Adw.ResponseAppearance.DESTRUCTIVE)
+    dialog.set_default_response("cancel")
+
+    debs = [p for p in pkgs if p.kind in (PackageKind.APT, PackageKind.DEB)]
+    if debs and manager.apt:
+        selected = {p.name.split(":")[0] for p in debs}
+
+        def show_removals(removed):
+            others = [n for n in removed if n not in selected]
+            if others:
+                warn.set_label(f"⚠ APT will also remove {len(others)} other package(s): "
+                               + ", ".join(others[:30]))
+                warn.set_visible(True)
+
+        run_async(lambda: manager.apt.simulate_removal(debs, False), show_removals)
+
+    def on_response(_d, response):
+        if response != "remove":
+            return
+        commands = []
+        for backend in manager.backends:
+            group = [p for p in pkgs if p.kind in backend.kinds]
+            if group:
+                commands += backend.uninstall_many(group, check.get_active())
+        run_operation(parent, manager, f"Uninstalling {len(pkgs)} apps", commands, on_done,
+                      auto_close=False)
+
+    dialog.connect("response", on_response)
+    dialog.present(parent)

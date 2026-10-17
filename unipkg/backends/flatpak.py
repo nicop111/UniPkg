@@ -562,17 +562,22 @@ class FlatpakBackend(Backend):
         return [Command(f"Install {os.path.basename(path)}",
                         ["flatpak", "install", "--user", "-y", "--noninteractive", flag, path])]
 
-    def uninstall(self, pkg: Package, delete_data: bool) -> list[Command]:
-        inst = pkg.extra.get("installation", "system")
-        argv = ["flatpak", "uninstall", inst_flag(inst), "-y", "--noninteractive"]
+    def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        cmds = []
+        for inst in ("system", "user"):
+            group = [p for p in pkgs if p.extra.get("installation", "system") == inst]
+            if not group:
+                continue
+            argv = ["flatpak", "uninstall", inst_flag(inst), "-y", "--noninteractive"]
+            if delete_data:
+                argv.append("--delete-data")
+            argv += [p.extra.get("ref", p.name) for p in group]
+            cmds.append(Command(f"Uninstall {', '.join(p.display_name for p in group)}", argv))
         if delete_data:
-            argv.append("--delete-data")
-        argv.append(pkg.extra.get("ref", pkg.name))
-        cmds = [Command(f"Uninstall {pkg.display_name}", argv)]
-        if delete_data:
-            cmds.append(Command("Remove permission overrides",
-                                ["flatpak", "override", "--user", "--reset", pkg.name],
-                                allow_failure=True))
+            for pkg in pkgs:
+                cmds.append(Command(f"Remove permission overrides of {pkg.display_name}",
+                                    ["flatpak", "override", "--user", "--reset", pkg.name],
+                                    allow_failure=True))
         return cmds
 
     def data_locations(self, pkg: Package) -> list[str]:

@@ -616,21 +616,26 @@ done
                 current.add(line.strip())
         return files
 
-    def simulate_removal(self, pkg: Package, purge: bool) -> list[str]:
-        res = host.run(["apt-get", "-s", "purge" if purge else "remove", pkg.name], timeout=60)
+    def simulate_removal(self, pkg: Package | list[Package], purge: bool) -> list[str]:
+        pkgs = pkg if isinstance(pkg, list) else [pkg]
+        res = host.run(["apt-get", "-s", "purge" if purge else "remove", *[p.name for p in pkgs]],
+                       timeout=60)
         return [l.split()[1] for l in res.stdout.splitlines() if l.startswith(("Remv ", "Purg "))]
 
-    def uninstall(self, pkg: Package, delete_data: bool) -> list[Command]:
+    def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
         verb = "purge" if delete_data else "remove"
-        script = f"apt-get {verb} {' '.join(shlex.quote(o) for o in APT_OPTS)} {shlex.quote(pkg.name)}"
-        cmds = [Command(f"{verb.capitalize()} {pkg.name}",
+        names = [p.name for p in pkgs]
+        script = (f"apt-get {verb} {' '.join(shlex.quote(o) for o in APT_OPTS)} "
+                  f"{' '.join(shlex.quote(n) for n in names)}")
+        cmds = [Command(f"{verb.capitalize()} {', '.join(names)}",
                         host.privileged(["sh", "-c", script], APT_ENV),
-                        on_failure=self._outcome_check([pkg.name], "purged" if delete_data else "removed"))]
+                        on_failure=self._outcome_check(names, "purged" if delete_data else "removed"))]
         if delete_data:
-            for loc in self.data_locations(pkg):
-                path = loc.replace("~", "$HOME", 1)
-                cmds.append(Command(f"Delete {loc}", ["sh", "-c", f'rm -rf -- "{path}"'],
-                                    allow_failure=True))
+            for pkg in pkgs:
+                for loc in self.data_locations(pkg):
+                    path = loc.replace("~", "$HOME", 1)
+                    cmds.append(Command(f"Delete {loc}", ["sh", "-c", f'rm -rf -- "{path}"'],
+                                        allow_failure=True))
         return cmds
 
     def data_locations(self, pkg: Package) -> list[str]:

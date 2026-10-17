@@ -76,6 +76,10 @@ class Backend:
         raise NotImplementedError
 
     def uninstall(self, pkg: Package, delete_data: bool) -> list[Command]:
+        return self.uninstall_many([pkg], delete_data)
+
+    def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        """Remove several packages, batching them into as few commands as possible."""
         raise NotImplementedError
 
     def data_locations(self, pkg: Package) -> list[str]:

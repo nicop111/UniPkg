@@ -433,3 +433,32 @@ class RiskTests(unittest.TestCase):
         self.assertEqual(risk.assess(flatpak_ok, now=now).level, risk.RiskLevel.NONE)
         self.assertEqual(risk.assess(flatpak_escape, now=now).score, 25 + 12)
         self.assertEqual(risk.assess(classic, now=now).level, risk.RiskLevel.MEDIUM)
+
+
+class BulkUninstallTests(unittest.TestCase):
+    def _pkg(self, kind, name, **extra):
+        from unipkg.models import Package
+
+        return Package(kind=kind, name=name, display_name=name, extra=extra)
+
+    def test_batched_commands(self):
+        fp = flatpak.FlatpakBackend()
+        cmds = fp.uninstall_many([
+            self._pkg(PackageKind.FLATPAK, "a.b.C", installation="system", ref="app/a.b.C/x86_64/stable"),
+            self._pkg(PackageKind.FLATPAK, "d.e.F", installation="user", ref="app/d.e.F/x86_64/stable"),
+            self._pkg(PackageKind.FLATPAK, "g.h.I", installation="system", ref="app/g.h.I/x86_64/stable"),
+        ], delete_data=False)
+        self.assertEqual(len(cmds), 2)  # one command per installation
+        self.assertEqual(cmds[0].argv[-2:], ["app/a.b.C/x86_64/stable", "app/g.h.I/x86_64/stable"])
+        self.assertIn("--user", cmds[1].argv)
+
+        sn = snap.SnapBackend()
+        cmds = sn.uninstall_many([self._pkg(PackageKind.SNAP, "x"), self._pkg(PackageKind.SNAP, "y")], True)
+        self.assertEqual(cmds[0].argv, ["pkexec", "snap", "remove", "--purge", "x", "y"])
+        self.assertEqual(len(cmds), 3)  # + one ~/snap cleanup per snap, run as the user
+        self.assertNotEqual(cmds[1].argv[0], "pkexec")
+
+        ap = apt.AptBackend()
+        cmds = ap.uninstall_many([self._pkg(PackageKind.APT, "foo"), self._pkg(PackageKind.DEB, "bar")], False)
+        self.assertEqual(len(cmds), 1)  # one apt-get run, one password prompt
+        self.assertTrue(cmds[0].argv[-1].endswith("foo bar"))

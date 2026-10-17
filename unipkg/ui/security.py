@@ -9,7 +9,8 @@ from gi.repository import Adw, GLib, Gtk
 from ..models import Package
 from ..risk import RiskAssessment, RiskLevel, assess_all
 from .common import ICONS, dim_label, kind_badge
-from .details import confirm_uninstall
+from .details import confirm_bulk_uninstall, confirm_uninstall
+from .selection import Selection, SelectionBar, select_toggle_button
 
 
 def risk_badge(level: RiskLevel, score: int | None = None) -> Gtk.Label:
@@ -60,7 +61,7 @@ class SecurityPage(Gtk.Box):
 
         self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.list.add_css_class("boxed-list")
-        self.list.connect("row-activated", lambda _l, row: self.show_assessment(row._assessment))
+        self.list.connect("row-activated", self._on_row_activated)
         content.append(self.list)
         self.clean_label = dim_label("", wrap=True)
         content.append(self.clean_label)
@@ -68,6 +69,14 @@ class SecurityPage(Gtk.Box):
         clamp = Adw.Clamp(maximum_size=1000, child=content)
         self.stack.add_named(Gtk.ScrolledWindow(child=clamp), "list")
         self.append(self.stack)
+
+        self.selection = Selection()
+        self.select_mode = False
+        self._checks: dict[str, Gtk.CheckButton] = {}
+        self.selection.connect("changed", lambda *_: self._sync_checks())
+        self.selection_bar = SelectionBar(self.selection, self.select_all_listed,
+                                          self.uninstall_selected)
+        self.append(self.selection_bar)
 
         manager.connect("packages-changed", lambda *_: self.rebuild())
         manager.connect("updates-changed", lambda *_: self.rebuild())
@@ -90,7 +99,11 @@ class SecurityPage(Gtk.Box):
         for level, label in self._tile_labels.items():
             label.set_label(str(counts[level]))
 
+        present = {a.pkg.uid for a in self.assessments if a.level != RiskLevel.NONE}
+        if self.selection.uids - present:
+            self.selection.replace(self.selection.uids & present)
         self.list.remove_all()
+        self._checks.clear()
         for a in self.assessments:
             if a.level != RiskLevel.NONE:
                 self.list.append(self._row(a))
@@ -103,9 +116,14 @@ class SecurityPage(Gtk.Box):
         pkg = a.pkg
         row = Adw.ActionRow(title=pkg.display_name, subtitle=a.summary, activatable=True,
                             use_markup=False, subtitle_lines=2)
+        check = Gtk.CheckButton(valign=Gtk.Align.CENTER, visible=self.select_mode,
+                                active=pkg.uid in self.selection)
+        check.connect("toggled", lambda c, uid=pkg.uid: self.selection.set(uid, c.get_active()))
+        self._checks[pkg.uid] = check
         image = Gtk.Image(pixel_size=32)
         ICONS.set_image(image, pkg, 32)
         row.add_prefix(image)
+        row.add_prefix(check)  # later prefixes are placed further left
         row.add_suffix(kind_badge(pkg.kind))
         row.add_suffix(risk_badge(a.level, a.score))
         remove = Gtk.Button(icon_name="user-trash-symbolic", valign=Gtk.Align.CENTER,
@@ -117,6 +135,39 @@ class SecurityPage(Gtk.Box):
         row.add_suffix(Gtk.Image.new_from_icon_name("go-next-symbolic"))
         row._assessment = a  # type: ignore[attr-defined]
         return row
+
+    # selection --------------------------------------------------------------
+    def header_widgets(self) -> list[Gtk.Widget]:
+        self.select_button = select_toggle_button(self.set_select_mode)
+        return [self.select_button]
+
+    def set_select_mode(self, enabled: bool) -> None:
+        self.select_mode = enabled
+        for check in self._checks.values():
+            check.set_visible(enabled)
+        self.selection_bar.set_reveal_child(enabled)
+        if not enabled:
+            self.selection.clear()
+
+    def _on_row_activated(self, _list, row) -> None:
+        if self.select_mode:
+            self.selection.toggle(row._assessment.pkg.uid)
+        else:
+            self.show_assessment(row._assessment)
+
+    def _sync_checks(self) -> None:
+        for uid, check in self._checks.items():
+            active = uid in self.selection
+            if check.get_active() != active:
+                check.set_active(active)  # set() ignores no-op changes, so no loop
+
+    def select_all_listed(self) -> None:
+        self.selection.replace(set(self._checks))
+
+    def uninstall_selected(self) -> None:
+        pkgs = [a.pkg for a in self.assessments if a.pkg.uid in self.selection]
+        if pkgs:
+            confirm_bulk_uninstall(self, self.manager, pkgs, lambda ok: self.manager.reload())
 
     def uninstall(self, pkg: Package, parent: Gtk.Widget | None = None) -> None:
         confirm_uninstall(parent or self, self.manager, pkg, False,

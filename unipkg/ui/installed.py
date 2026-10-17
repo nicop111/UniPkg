@@ -9,6 +9,8 @@ from gi.repository import Adw, Gio, GObject, Gtk, Pango
 from ..models import Package, PackageKind, PermissionCategory, Trust
 from ..util import format_date, format_datetime, format_size
 from .common import ICONS, dim_label
+from .details import confirm_bulk_uninstall
+from .selection import Selection, SelectionBar, select_toggle_button
 
 SCOPES = [
     ("apps", "Applications"),
@@ -208,6 +210,22 @@ class InstalledPage(Gtk.Box):
                                     description="Try changing the filters")
         self.stack.add_named(self.empty, "empty")
         self.append(self.stack)
+
+        # --- multi selection -----------------------------------------------
+        self.selection = Selection()
+        self.select_mode = False
+        self._bound_checks: set[Gtk.CheckButton] = set()
+        select_factory = Gtk.SignalListItemFactory()
+        select_factory.connect("setup", self._setup_check)
+        select_factory.connect("bind", self._bind_check)
+        select_factory.connect("unbind", self._unbind_check)
+        self.select_column = Gtk.ColumnViewColumn(title="", factory=select_factory, visible=False)
+        self.select_column.set_fixed_width(44)
+        self.view.insert_column(0, self.select_column)
+        self.selection.connect("changed", lambda *_: self._sync_checks())
+        self.selection_bar = SelectionBar(self.selection, self.select_all_visible,
+                                          self.uninstall_selected)
+        self.append(self.selection_bar)
 
         self.view.sort_by_column(self.columns["name"], Gtk.SortType.ASCENDING)
         manager.connect("packages-changed", lambda *_: self.reload())
@@ -494,11 +512,76 @@ class InstalledPage(Gtk.Box):
 
     def _on_row_activate(self, _view, position):
         obj = self.sort_model.get_item(position)
-        if obj is not None:
+        if obj is None:
+            return
+        if self.select_mode:
+            self.selection.toggle(obj.pkg.uid)
+        else:
             self._on_activate(obj.pkg)
+
+    # selection ------------------------------------------------------------
+    def header_widgets(self) -> list[Gtk.Widget]:
+        self.select_button = select_toggle_button(self.set_select_mode)
+        return [self.select_button]
+
+    def set_select_mode(self, enabled: bool) -> None:
+        self.select_mode = enabled
+        self.select_column.set_visible(enabled)
+        self.selection_bar.set_reveal_child(enabled)
+        if not enabled:
+            self.selection.clear()
+        if hasattr(self, "select_button") and self.select_button.get_active() != enabled:
+            self.select_button.set_active(enabled)
+
+    def _setup_check(self, _f, item):
+        check = Gtk.CheckButton(halign=Gtk.Align.CENTER)
+        check._uid = None  # type: ignore[attr-defined]
+        check.connect("toggled", self._on_check_toggled)
+        item.set_child(check)
+
+    def _bind_check(self, _f, item):
+        check = item.get_child()
+        check._uid = item.get_item().pkg.uid
+        check.handler_block_by_func(self._on_check_toggled)
+        check.set_active(check._uid in self.selection)
+        check.handler_unblock_by_func(self._on_check_toggled)
+        self._bound_checks.add(check)
+
+    def _unbind_check(self, _f, item):
+        self._bound_checks.discard(item.get_child())
+
+    def _on_check_toggled(self, check):
+        if check._uid:
+            self.selection.set(check._uid, check.get_active())
+
+    def _sync_checks(self) -> None:
+        for check in self._bound_checks:
+            active = check._uid in self.selection
+            if check.get_active() != active:
+                check.handler_block_by_func(self._on_check_toggled)
+                check.set_active(active)
+                check.handler_unblock_by_func(self._on_check_toggled)
+
+    def select_all_visible(self) -> None:
+        uids = {self.filter_model.get_item(i).pkg.uid for i in range(self.filter_model.get_n_items())}
+        self.selection.replace(self.selection.uids | uids)
+
+    def uninstall_selected(self) -> None:
+        pkgs = [p for p in self.manager.packages if p.uid in self.selection]
+        if not pkgs:
+            return
+
+        def done(ok: bool) -> None:
+            self.manager.reload()
+
+        confirm_bulk_uninstall(self, self.manager, pkgs, done)
 
     # data ------------------------------------------------------------------
     def reload(self) -> None:
+        if hasattr(self, "selection"):
+            present = {p.uid for p in self.manager.packages}
+            if self.selection.uids - present:
+                self.selection.replace(self.selection.uids & present)
         objects = [PackageObject(p) for p in self.manager.packages]
         self.store.splice(0, self.store.get_n_items(), objects)
         sources = sorted({p.source for p in self.manager.packages if p.source})

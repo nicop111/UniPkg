@@ -276,14 +276,14 @@ class SnapBackend(Backend):
         return [Command("Install local snap (unsigned)",
                         host.privileged(["snap", "install", "--dangerous", host_path]))]
 
-    def uninstall(self, pkg: Package, delete_data: bool) -> list[Command]:
-        argv = ["snap", "remove", pkg.name]
+    def uninstall_many(self, pkgs: list[Package], delete_data: bool) -> list[Command]:
+        argv = ["snap", "remove", *(["--purge"] if delete_data else []), *[p.name for p in pkgs]]
+        cmds = [Command(f"Remove {', '.join(p.display_name for p in pkgs)}", host.privileged(argv))]
         if delete_data:
-            argv.insert(2, "--purge")
-        cmds = [Command(f"Remove {pkg.display_name}", host.privileged(argv))]
-        if delete_data:
-            cmds.append(Command("Delete user data in ~/snap",
-                                ["sh", "-c", f'rm -rf -- "$HOME/snap/{pkg.name}"'], allow_failure=True))
+            for pkg in pkgs:
+                cmds.append(Command(f"Delete user data of {pkg.display_name} in ~/snap",
+                                    ["sh", "-c", f'rm -rf -- "$HOME/snap/{pkg.name}"'],
+                                    allow_failure=True))
         return cmds
 
     def data_locations(self, pkg: Package) -> list[str]:
