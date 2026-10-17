@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d58c"/>
+      <stop offset="1" stop-color="#e8b85c"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d9a046"/>
+      <stop offset="1" stop-color="#c2852e"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b8792a"/>
+      <stop offset="1" stop-color="#9c6220"/>
+    </linearGradient>
+  </defs>
+  <!-- shadow -->
+  <ellipse cx="64" cy="116" rx="46" ry="7" fill="#000" opacity="0.18"/>
+  <!-- box -->
+  <path d="M64 14 L114 38 L64 62 L14 38 Z" fill="url(#top)"/>
+  <path d="M14 38 L64 62 L64 116 L14 92 Z" fill="url(#left)"/>
+  <path d="M114 38 L64 62 L64 116 L114 92 Z" fill="url(#right)"/>
+  <!-- tape -->
+  <path d="M39 26 L89 50 L89 66 L80 70 L80 55 L30 31 Z" fill="#fff" opacity="0.55"/>
+  <!-- format dots: apt, deb, flatpak, snap -->
+  <circle cx="32" cy="70" r="8" fill="#e66100" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="48" cy="86" r="8" fill="#c01c28" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="80" cy="86" r="8" fill="#3584e4" stroke="#fff" stroke-width="2.5"/>
+  <circle cx="96" cy="70" r="8" fill="#26a269" stroke="#fff" stroke-width="2.5"/>
+  <!-- check shield -->
+  <path d="M64 70 L76 75 L76 86 C76 94 70 99 64 102 C58 99 52 94 52 86 L52 75 Z"
+        fill="#ffffff" opacity="0.95"/>
+  <path d="M58 86 L62.5 90.5 L70.5 81" fill="none" stroke="#26a269" stroke-width="3.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

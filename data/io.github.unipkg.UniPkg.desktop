@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=UniPkg
+GenericName=Package Manager
+Comment=Manage APT, Debian, Flatpak and Snap packages in one place
+Exec=unipkg %F
+Icon=io.github.unipkg.UniPkg
+Terminal=false
+Categories=System;PackageManager;GTK;
+Keywords=apt;deb;flatpak;snap;package;install;update;software;permissions;repository;
+MimeType=application/vnd.debian.binary-package;application/x-deb;application/vnd.snap;application/vnd.flatpak.ref;application/vnd.flatpak;
+StartupNotify=true

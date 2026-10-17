@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.unipkg.UniPkg</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>UniPkg</name>
+  <summary>One place for APT, Debian, Flatpak and Snap packages</summary>
+  <developer id="io.github.unipkg">
+    <name>UniPkg contributors</name>
+  </developer>
+  <description>
+    <p>
+      UniPkg is a universal package manager for Debian and Ubuntu based systems. It shows
+      every application installed on your computer — no matter whether it came from APT,
+      a downloaded .deb file, Flatpak or Snap — in a single list.
+    </p>
+    <ul>
+      <li>Filter and sort by name, developer, package type, source, permissions and size</li>
+      <li>Review and change permissions such as network, notifications, files, camera and devices</li>
+      <li>Search all formats at once and compare size, sandboxing and verification before installing</li>
+      <li>Update one app or everything at once</li>
+      <li>Uninstall packages and delete their data</li>
+      <li>Manage APT repositories, PPAs and Flatpak remotes</li>
+      <li>Verify that packages are legit: repository signatures, signing keys, store assertions and file checksums</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.unipkg.UniPkg.desktop</launchable>
+  <url type="homepage">https://github.com/unipkg/unipkg</url>
+  <url type="bugtracker">https://github.com/unipkg/unipkg/issues</url>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <categories>
+    <category>System</category>
+    <category>PackageManager</category>
+  </categories>
+  <keywords>
+    <keyword>apt</keyword>
+    <keyword>flatpak</keyword>
+    <keyword>snap</keyword>
+    <keyword>deb</keyword>
+  </keywords>
+  <releases>
+    <release version="0.1.0" date="2026-10-17">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,42 @@
+{
+  "id": "io.github.unipkg.UniPkg",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "50",
+  "sdk": "org.gnome.Sdk",
+  "command": "unipkg",
+  "finish-args": [
+    "--share=ipc",
+    "--share=network",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--talk-name=org.freedesktop.Flatpak",
+    "--filesystem=host-os:ro",
+    "--filesystem=host-etc:ro"
+  ],
+  "modules": [
+    {
+      "name": "unipkg",
+      "buildsystem": "simple",
+      "build-commands": [
+        "install -d /app/share/unipkg/unipkg/backends /app/share/unipkg/unipkg/ui",
+        "install -m644 unipkg/*.py unipkg/*.css /app/share/unipkg/unipkg/",
+        "install -m644 unipkg/backends/*.py /app/share/unipkg/unipkg/backends/",
+        "install -m644 unipkg/ui/*.py /app/share/unipkg/unipkg/ui/",
+        "python3 -m compileall -q /app/share/unipkg",
+        "sed 's|@pkgdatadir@|/app/share/unipkg|' bin/unipkg.in > unipkg-launcher",
+        "install -Dm755 unipkg-launcher /app/bin/unipkg",
+        "install -Dm644 data/io.github.unipkg.UniPkg.desktop /app/share/applications/io.github.unipkg.UniPkg.desktop",
+        "install -Dm644 data/io.github.unipkg.UniPkg.metainfo.xml /app/share/metainfo/io.github.unipkg.UniPkg.metainfo.xml",
+        "install -Dm644 data/io.github.unipkg.UniPkg.svg /app/share/icons/hicolor/scalable/apps/io.github.unipkg.UniPkg.svg"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": ".",
+          "skip": [".git", ".flatpak-builder", "build-dir", "repo", "unipkg.flatpak"]
+        }
+      ]
+    }
+  ]
+}
