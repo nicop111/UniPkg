@@ -100,9 +100,11 @@ class InstalledPage(Gtk.Box):
         self.query = ""
 
         # --- filter bar -------------------------------------------------
-        bar = Gtk.Box(spacing=8, margin_start=12, margin_end=12, margin_top=8, margin_bottom=8)
+        bar = Adw.WrapBox(child_spacing=8, line_spacing=8, margin_start=12, margin_end=12,
+                          margin_top=8, margin_bottom=8)
         bar.add_css_class("filter-bar")
-        self.search_entry = Gtk.SearchEntry(placeholder_text="Filter installed packages…", hexpand=True)
+        self.search_entry = Gtk.SearchEntry(placeholder_text="Filter installed packages…", hexpand=True,
+                                            width_chars=24)
         self.search_entry.connect("search-changed", self._on_search)
         bar.append(self.search_entry)
 
@@ -118,7 +120,8 @@ class InstalledPage(Gtk.Box):
         bar.append(kinds_box)
         self.append(bar)
 
-        bar2 = Gtk.Box(spacing=8, margin_start=12, margin_end=12, margin_bottom=8)
+        bar2 = Adw.WrapBox(child_spacing=8, line_spacing=8, margin_start=12, margin_end=12,
+                           margin_bottom=8)
         self.scope_dd = self._dropdown([label for _k, label in SCOPES], self._on_scope)
         self.scope_dd.set_tooltip_text("Which packages to show")
         bar2.append(self.scope_dd)
@@ -134,18 +137,17 @@ class InstalledPage(Gtk.Box):
         self.perm_dd.set_tooltip_text("Filter by permission")
         bar2.append(self.perm_dd)
 
-        spacer = Gtk.Box(hexpand=True)
-        bar2.append(spacer)
-        self.summary_label = dim_label("")
-        bar2.append(self.summary_label)
-
-        bar2.append(Gtk.Label(label="Sort by"))
+        sort_box = Gtk.Box(spacing=6)
+        sort_box.append(Gtk.Label(label="Sort by"))
         self.sort_dd = self._dropdown([label for _k, label in SORT_KEYS], self._on_sort_choice)
-        bar2.append(self.sort_dd)
+        sort_box.append(self.sort_dd)
         self.sort_dir_btn = Gtk.ToggleButton(icon_name="view-sort-ascending-symbolic")
         self.sort_dir_btn.set_tooltip_text("Reverse sort order")
         self.sort_dir_btn.connect("toggled", self._on_sort_choice)
-        bar2.append(self.sort_dir_btn)
+        sort_box.append(self.sort_dir_btn)
+        bar2.append(sort_box)
+        self.summary_label = dim_label("", valign=Gtk.Align.CENTER)
+        bar2.append(self.summary_label)
         self.append(bar2)
 
         # --- list ---------------------------------------------------------
@@ -325,6 +327,11 @@ class InstalledPage(Gtk.Box):
     def _refilter(self) -> None:
         self.filter.changed(Gtk.FilterChange.DIFFERENT)
         self._update_stack()
+        self._scroll_to_top()
+
+    def _scroll_to_top(self) -> None:
+        if self.sort_model.get_n_items() > 0:
+            self.view.scroll_to(0, None, Gtk.ListScrollFlags.NONE, None)
 
     def _on_search(self, entry):
         self.query = entry.get_text().strip().lower()
@@ -362,6 +369,7 @@ class InstalledPage(Gtk.Box):
                                         else "view-sort-ascending-symbolic")
         self.view.sort_by_column(self.columns[key],
                                  Gtk.SortType.DESCENDING if descending else Gtk.SortType.ASCENDING)
+        self._scroll_to_top()
 
     def _on_row_activate(self, _view, position):
         obj = self.sort_model.get_item(position)

@@ -39,6 +39,9 @@ class MainWindow(Adw.ApplicationWindow):
         self.explore = ExplorePage(manager)
         self.updates = UpdatesPage(manager, self.show_details)
         self.repositories = RepositoriesPage(manager)
+        # Keep only name, type and size columns on narrow (phone) screens.
+        for key in ("developer", "source", "permissions", "version"):
+            breakpoint.add_setter(self.installed.columns[key], "visible", False)
         widgets = {
             "installed": (self.installed, self._installed_header()),
             "explore": (self.explore, []),

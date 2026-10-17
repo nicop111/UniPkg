@@ -76,6 +76,10 @@ def run_script(app, window) -> None:
             dialog = window.get_visible_dialog()
             if dialog is not None:
                 dialog.force_close()
+        elif cmd == "perm":
+            window.installed.perm_dd.set_selected(int(arg))
+        elif cmd == "reverse":
+            window.installed.sort_dir_btn.set_active(arg == "1")
         elif cmd == "size":
             w, h = arg.split("x")
             window.set_default_size(int(w), int(h))
