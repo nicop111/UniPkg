@@ -342,10 +342,23 @@ class PackageDetailsDialog(Adw.Dialog):
             GLib.timeout_add(1200, lambda: (self.close(), GLib.SOURCE_REMOVE)[1])
 
     def _confirm_uninstall(self, delete_data: bool) -> None:
-        confirm_uninstall(self, self.manager, self.pkg, delete_data, self._after_change)
+        confirm_uninstall(self, self.manager, self.pkg, delete_data, self._after_uninstall,
+                          on_closed=self._uninstall_dialog_closed)
+
+    def _after_uninstall(self, ok: bool) -> None:
+        # Keep this view and the progress dialog open; the user closes them.
+        self._uninstalled = ok
+        if ok:
+            self.manager.reload()
+            self.manager.check_updates()
+
+    def _uninstall_dialog_closed(self) -> None:
+        if getattr(self, "_uninstalled", False):
+            self.close()  # the package no longer exists
 
 
-def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bool, on_done) -> None:
+def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bool, on_done,
+                      on_closed=None) -> None:
     backend = manager.backend_for(pkg.kind)
     dialog = Adw.AlertDialog(
         heading=f"Uninstall {pkg.display_name}?",
@@ -399,7 +412,8 @@ def confirm_uninstall(parent: Gtk.Widget, manager, pkg: Package, delete_data: bo
         if response != "remove":
             return
         commands = backend.uninstall(pkg, check.get_active())
-        run_operation(parent, manager, f"Uninstalling {pkg.display_name}", commands, on_done)
+        run_operation(parent, manager, f"Uninstalling {pkg.display_name}", commands, on_done,
+                      auto_close=False, on_closed=on_closed)
 
     dialog.connect("response", on_response)
     dialog.present(parent)

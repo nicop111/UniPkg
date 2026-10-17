@@ -19,9 +19,11 @@ class OperationDialog(Adw.Dialog):
         commands: list[Command],
         lock: threading.Lock,
         on_done: Optional[Callable[[bool], None]] = None,
+        auto_close: bool = True,
     ):
         super().__init__(title=title, content_width=620, content_height=460)
         self._commands = commands
+        self._auto_close_enabled = auto_close
         self._lock = lock
         self._on_done = on_done
         self._process: Optional[host.StreamingProcess] = None
@@ -187,7 +189,7 @@ class OperationDialog(Adw.Dialog):
         self.set_can_close(True)
         if self._on_done:
             self._on_done(ok)
-        if ok and not warnings:
+        if ok and not warnings and self._auto_close_enabled:
             GLib.timeout_add(900, self._auto_close)
         return GLib.SOURCE_REMOVE
 
@@ -207,12 +209,22 @@ class OperationDialog(Adw.Dialog):
 
 
 def run_operation(parent: Gtk.Widget, manager, title: str, commands: list[Command],
-                  on_done: Optional[Callable[[bool], None]] = None) -> None:
-    """Show an :class:`OperationDialog` for *commands* on top of *parent*."""
+                  on_done: Optional[Callable[[bool], None]] = None, *,
+                  auto_close: bool = True,
+                  on_closed: Optional[Callable[[], None]] = None) -> None:
+    """Show an :class:`OperationDialog` for *commands* on top of *parent*.
+
+    With ``auto_close=False`` the dialog stays open after success until the
+    user closes it; *on_closed* runs once it has been closed.
+    """
     if not commands:
         if on_done:
             on_done(True)
+        if on_closed:
+            on_closed()
         return
-    dialog = OperationDialog(title, commands, manager.operation_lock, on_done)
+    dialog = OperationDialog(title, commands, manager.operation_lock, on_done, auto_close)
+    if on_closed:
+        dialog.connect("closed", lambda *_: on_closed())
     dialog.present(parent)
 
