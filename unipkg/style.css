@@ -60,6 +60,8 @@
 .compare-grid > label.compare-key,
 .compare-grid > label.compare-cell { border-top: 1px solid alpha(currentColor, 0.08); }
 .best-value { color: @success_color; font-weight: 700; }
+.sandboxed { color: @success_color; font-weight: 700; }
+.not-sandboxed { color: @error_color; font-weight: 700; }
 
 .op-log { font-size: 0.85em; background: transparent; }
 

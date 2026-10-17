@@ -191,6 +191,14 @@ class _IconProxy:
         self.uid = f"search:{best.kind.value}:{best.name}"
 
 
+def is_sandboxed(result: SearchResult) -> bool:
+    if result.kind == PackageKind.FLATPAK:
+        return True
+    if result.kind == PackageKind.SNAP:
+        return not result.extra.get("classic")
+    return False  # APT / .deb packages run without a sandbox
+
+
 class CompareDialog(Adw.Dialog):
     """Side by side comparison of the formats an app is available in."""
 
@@ -203,7 +211,7 @@ class CompareDialog(Adw.Dialog):
         ("Installed size", lambda r: format_size(r.installed_size)),
         ("Developer", lambda r: r.developer or "—"),
         ("Source", lambda r: r.source or "—"),
-        ("Sandboxing", lambda r: r.confinement or "—"),
+        ("Sandboxing", lambda r: "Sandboxed" if is_sandboxed(r) else "Not sandboxed"),
         ("Permissions", lambda r: ", ".join(r.extra.get("permissions", [])[:8]) or
          ("Full system access" if r.kind == PackageKind.APT else "—")),
         ("License", lambda r: r.extra.get("license") or "—"),
@@ -218,14 +226,9 @@ class CompareDialog(Adw.Dialog):
                          content_width=min(1100, 360 + 280 * len(items)), content_height=760)
         self.manager = manager
         self.items = items
-        for item in items:
-            installed = (manager.find_installed(item.kind, item.name)
-                         or (item.kind == PackageKind.APT and manager.find_installed(PackageKind.DEB, item.name)))
-            if installed:
-                item.extra["installed_note"] = (
-                    f"Installed {installed.version}, updated {_lower_relative(format_date(installed.updated))}"
-                    if installed.updated else f"Installed {installed.version}")
+        self._update_installed_state()
         self._labels: dict[tuple[int, str], Gtk.Label] = {}
+        self._action_boxes: dict[int, Gtk.Box] = {}
         self._trust_boxes: dict[int, Gtk.Box] = {}
 
         toolbar = Adw.ToolbarView()
@@ -263,10 +266,16 @@ class CompareDialog(Adw.Dialog):
             name.add_css_class("caption")
             name.add_css_class("dim-label")
             box.append(name)
-            tbox = Gtk.Box()
+            tbox = Gtk.Box(spacing=6)
             tbox.append(trust_badge(item.trust))
             self._trust_boxes[col] = tbox
             box.append(tbox)
+            if len(items) > 1 and col == self._recommended():
+                rec = Gtk.Label(label="★ Recommended", xalign=0)
+                rec.add_css_class("caption-heading")
+                rec.add_css_class("accent")
+                rec.set_tooltip_text("Best combination of sandboxing and verification")
+                box.append(rec)
             grid.attach(box, col, 0, 1, 1)
 
         for row_idx, (title_text, getter) in enumerate(self.ROWS, 1):
@@ -284,17 +293,10 @@ class CompareDialog(Adw.Dialog):
         self._highlight_best()
 
         btn_row = len(self.ROWS) + 1
-        for col, item in enumerate(items, 1):
-            installed = item.installed
-            btn = Gtk.Button(label="Installed" if installed else f"Install {item.kind.label}",
-                             sensitive=not installed, margin_top=14, halign=Gtk.Align.START)
-            btn.add_css_class("pill")
-            if not installed and col == self._recommended():
-                btn.add_css_class("suggested-action")
-                btn.set_tooltip_text("Recommended: best sandboxing and verification")
-            btn.connect("clicked", self._on_install, item)
-            grid.attach(btn, col, btn_row, 1, 1)
-        self._verify_row = btn_row + 1
+        for col in range(1, len(items) + 1):
+            self._action_boxes[col] = Gtk.Box(margin_top=14, halign=Gtk.Align.START)
+            grid.attach(self._action_boxes[col], col, btn_row, 1, 1)
+        self._refresh_actions()
 
         scroller = Gtk.ScrolledWindow(child=grid, hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,
                                       vscrollbar_policy=Gtk.PolicyType.NEVER)
@@ -308,6 +310,58 @@ class CompareDialog(Adw.Dialog):
         for col, item in enumerate(items, 1):
             run_async(lambda item=item: self._load_details(item),
                       lambda res, col=col, item=item: self._update_column(col, item, res))
+
+        # Keep install/uninstall buttons in sync while the dialog is open.
+        handler = manager.connect("packages-changed", lambda *_: self._on_packages_changed())
+        self.connect("closed", lambda *_: manager.disconnect(handler))
+
+    # installed state / actions ---------------------------------------------
+    def _installed_pkg(self, item: SearchResult):
+        return (self.manager.find_installed(item.kind, item.name)
+                or (item.kind == PackageKind.APT and self.manager.find_installed(PackageKind.DEB, item.name))
+                or None)
+
+    def _update_installed_state(self) -> None:
+        for item in self.items:
+            pkg = self._installed_pkg(item)
+            item.installed = pkg is not None
+            if pkg is None:
+                item.extra.pop("installed_note", None)
+            else:
+                item.extra["installed_note"] = (
+                    f"Installed {pkg.version}, updated {_lower_relative(format_date(pkg.updated))}"
+                    if pkg.updated else f"Installed {pkg.version}")
+
+    def _refresh_actions(self) -> None:
+        for col, item in enumerate(self.items, 1):
+            box = self._action_boxes[col]
+            child = box.get_first_child()
+            if child is not None:
+                box.remove(child)
+            pkg = self._installed_pkg(item)
+            if pkg is not None:
+                btn = Gtk.Button(label=f"Uninstall {item.kind.label}")
+                btn.add_css_class("destructive-action")
+                btn.connect("clicked", lambda _b, pkg=pkg: self._on_uninstall(pkg))
+            else:
+                btn = Gtk.Button(label=f"Install {item.kind.label}")
+                btn.add_css_class("suggested-action")
+                btn.connect("clicked", self._on_install, item)
+            btn.add_css_class("pill")
+            box.append(btn)
+
+    def _on_packages_changed(self) -> None:
+        self._update_installed_state()
+        for col, item in enumerate(self.items, 1):
+            self._labels[(col, "On this computer")].set_label(
+                item.extra.get("installed_note", "Not installed"))
+        self._refresh_actions()
+
+    def _on_uninstall(self, pkg) -> None:
+        from .details import confirm_uninstall
+
+        confirm_uninstall(self, self.manager, pkg, False,
+                          lambda ok: ok and self.manager.reload())
 
     def _recommended(self) -> int:
         """Prefer a sandboxed, verified format."""
@@ -355,6 +409,11 @@ class CompareDialog(Adw.Dialog):
             self.verify_group.add(exp)
 
     def _highlight_best(self) -> None:
+        for col, item in enumerate(self.items, 1):
+            label = self._labels[(col, "Sandboxing")]
+            sandboxed = is_sandboxed(item)
+            label.remove_css_class("sandboxed" if not sandboxed else "not-sandboxed")
+            label.add_css_class("sandboxed" if sandboxed else "not-sandboxed")
         released = [(i.released, col) for col, i in enumerate(self.items, 1) if i.released]
         for col in range(1, len(self.items) + 1):
             label = self._labels[(col, "Latest release")]
@@ -398,9 +457,9 @@ class CompareDialog(Adw.Dialog):
         dialog.present(self)
 
     def _after_install(self, ok: bool) -> None:
+        # Stay open so another format can be uninstalled right away.
         if ok:
             self.manager.reload()
-            GLib.timeout_add(1000, lambda: (self.close(), GLib.SOURCE_REMOVE)[1])
 
 
 def install_local_file(parent: Gtk.Widget, manager, path: str) -> None:
