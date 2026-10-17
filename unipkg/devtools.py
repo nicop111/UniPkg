@@ -97,7 +97,6 @@ def run_script(app, window) -> None:
             # select:installed:3  -> enable selection mode and select the first N rows
             page_name, _, count = arg.partition(":")
             page = getattr(window, page_name)
-            page.set_select_mode(True)
             if page_name == "installed":
                 uids = {page.sort_model.get_item(i).pkg.uid for i in range(int(count or 0))}
             else:

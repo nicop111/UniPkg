@@ -54,7 +54,7 @@ class MainWindow(Adw.ApplicationWindow):
             "explore": (self.explore, []),
             "updates": (self.updates, self.updates.header_widgets()),
             "repositories": (self.repositories, self.repositories.header_widgets()),
-            "security": (self.security, self.security.header_widgets()),
+            "security": (self.security, []),
         }
         self.nav_pages: dict[str, Adw.NavigationPage] = {}
         for key, title, _icon in PAGES:
@@ -127,7 +127,7 @@ class MainWindow(Adw.ApplicationWindow):
     def _installed_header(self) -> list[Gtk.Widget]:
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Reload packages (Ctrl+R)")
         refresh.set_action_name("app.reload")
-        return [refresh, *self.installed.header_widgets()]
+        return [refresh]
 
     # ------------------------------------------------------------------
     def show_page(self, key: str) -> None:

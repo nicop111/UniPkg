@@ -10,7 +10,7 @@ from ..models import Package, PackageKind, PermissionCategory, Trust
 from ..util import format_date, format_datetime, format_size
 from .common import ICONS, dim_label
 from .details import confirm_bulk_uninstall
-from .selection import Selection, SelectionBar, select_toggle_button
+from .selection import Selection, SelectionBar
 
 SCOPES = [
     ("apps", "Applications"),
@@ -213,13 +213,12 @@ class InstalledPage(Gtk.Box):
 
         # --- multi selection -----------------------------------------------
         self.selection = Selection()
-        self.select_mode = False
         self._bound_checks: set[Gtk.CheckButton] = set()
         select_factory = Gtk.SignalListItemFactory()
         select_factory.connect("setup", self._setup_check)
         select_factory.connect("bind", self._bind_check)
         select_factory.connect("unbind", self._unbind_check)
-        self.select_column = Gtk.ColumnViewColumn(title="", factory=select_factory, visible=False)
+        self.select_column = Gtk.ColumnViewColumn(title="", factory=select_factory)
         self.select_column.set_fixed_width(44)
         self.view.insert_column(0, self.select_column)
         self.selection.connect("changed", lambda *_: self._sync_checks())
@@ -512,29 +511,13 @@ class InstalledPage(Gtk.Box):
 
     def _on_row_activate(self, _view, position):
         obj = self.sort_model.get_item(position)
-        if obj is None:
-            return
-        if self.select_mode:
-            self.selection.toggle(obj.pkg.uid)
-        else:
+        if obj is not None:
             self._on_activate(obj.pkg)
 
-    # selection ------------------------------------------------------------
-    def header_widgets(self) -> list[Gtk.Widget]:
-        self.select_button = select_toggle_button(self.set_select_mode)
-        return [self.select_button]
-
-    def set_select_mode(self, enabled: bool) -> None:
-        self.select_mode = enabled
-        self.select_column.set_visible(enabled)
-        self.selection_bar.set_reveal_child(enabled)
-        if not enabled:
-            self.selection.clear()
-        if hasattr(self, "select_button") and self.select_button.get_active() != enabled:
-            self.select_button.set_active(enabled)
+    # selection (only the checkbox selects; clicking the row opens details) ---
 
     def _setup_check(self, _f, item):
-        check = Gtk.CheckButton(halign=Gtk.Align.CENTER)
+        check = Gtk.CheckButton(halign=Gtk.Align.CENTER, tooltip_text="Select for bulk uninstall")
         check._uid = None  # type: ignore[attr-defined]
         check.connect("toggled", self._on_check_toggled)
         item.set_child(check)

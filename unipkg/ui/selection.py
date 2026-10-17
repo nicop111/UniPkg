@@ -40,7 +40,7 @@ class Selection(GObject.Object):
 
 
 class SelectionBar(Gtk.Revealer):
-    """Bottom bar shown in selection mode: count, select all/none, uninstall."""
+    """Bottom bar shown while apps are selected: count, select all/none, uninstall."""
 
     def __init__(self, selection: Selection, on_select_all: Callable[[], None],
                  on_uninstall: Callable[[], None]):
@@ -65,13 +65,8 @@ class SelectionBar(Gtk.Revealer):
 
     def _sync(self) -> None:
         n = len(self.selection)
+        self.set_reveal_child(n > 0)
         self.label.set_label(f"{n} selected" if n else "Select apps")
         self.uninstall_btn.set_label(f"Uninstall {n}…" if n else "Uninstall…")
         self.uninstall_btn.set_sensitive(n > 0)
 
-
-def select_toggle_button(on_toggled: Callable[[bool], None]) -> Gtk.ToggleButton:
-    btn = Gtk.ToggleButton(icon_name="selection-mode-symbolic",
-                           tooltip_text="Select apps to uninstall several at once")
-    btn.connect("toggled", lambda b: on_toggled(b.get_active()))
-    return btn

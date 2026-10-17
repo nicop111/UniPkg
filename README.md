@@ -36,7 +36,7 @@ UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages eve
   - APT: `apt-get purge` plus the matching config, data and cache folders in your home folder
 
   For APT, the confirmation dialog lists any other packages apt would also remove.
-- **Bulk uninstall**: the Installed and Security pages have a **Select** mode. Check apps (or **Select All** to take everything the current filters show) and uninstall them together. The removal is batched per format (one `apt-get`, one `flatpak uninstall` per installation, one `snap remove`), so there is one password prompt per format. The confirmation lists the apps and warns about extra packages APT would also remove.
+- **Bulk uninstall**: every row in the Installed and Security lists has a checkbox. Ticking one reveals a bar with **Select All** (everything the current filters show), **Select None** and **Uninstall**; clicking the app itself still opens its details or risk assessment. The removal is batched per format (one `apt-get`, one `flatpak uninstall` per installation, one `snap remove`), so there is one password prompt per format. The confirmation lists the apps and warns about extra packages APT would also remove.
 - **Updates**: one list for APT, Flatpak and Snap, with **Update** buttons per app and per group, **Update All**, and **Refresh package lists** (`apt-get update`).
 - **Running apps**: before an update, UniPkg checks whether the apps involved are running. Flatpak and Snap apps are matched by their systemd scope; APT apps by their executables. Background services and helpers are ignored. If any are running you can:
   - **Close and Update**: asks the apps to quit normally (SIGTERM), waits up to 10 seconds and never force-kills. Afterwards a toast offers **Reopen**.

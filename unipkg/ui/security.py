@@ -10,7 +10,7 @@ from ..models import Package
 from ..risk import RiskAssessment, RiskLevel, assess_all
 from .common import ICONS, dim_label, kind_badge
 from .details import confirm_bulk_uninstall, confirm_uninstall
-from .selection import Selection, SelectionBar, select_toggle_button
+from .selection import Selection, SelectionBar
 
 
 def risk_badge(level: RiskLevel, score: int | None = None) -> Gtk.Label:
@@ -71,7 +71,6 @@ class SecurityPage(Gtk.Box):
         self.append(self.stack)
 
         self.selection = Selection()
-        self.select_mode = False
         self._checks: dict[str, Gtk.CheckButton] = {}
         self.selection.connect("changed", lambda *_: self._sync_checks())
         self.selection_bar = SelectionBar(self.selection, self.select_all_listed,
@@ -116,8 +115,8 @@ class SecurityPage(Gtk.Box):
         pkg = a.pkg
         row = Adw.ActionRow(title=pkg.display_name, subtitle=a.summary, activatable=True,
                             use_markup=False, subtitle_lines=2)
-        check = Gtk.CheckButton(valign=Gtk.Align.CENTER, visible=self.select_mode,
-                                active=pkg.uid in self.selection)
+        check = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=pkg.uid in self.selection,
+                                tooltip_text="Select for bulk uninstall")
         check.connect("toggled", lambda c, uid=pkg.uid: self.selection.set(uid, c.get_active()))
         self._checks[pkg.uid] = check
         image = Gtk.Image(pixel_size=32)
@@ -137,23 +136,8 @@ class SecurityPage(Gtk.Box):
         return row
 
     # selection --------------------------------------------------------------
-    def header_widgets(self) -> list[Gtk.Widget]:
-        self.select_button = select_toggle_button(self.set_select_mode)
-        return [self.select_button]
-
-    def set_select_mode(self, enabled: bool) -> None:
-        self.select_mode = enabled
-        for check in self._checks.values():
-            check.set_visible(enabled)
-        self.selection_bar.set_reveal_child(enabled)
-        if not enabled:
-            self.selection.clear()
-
     def _on_row_activated(self, _list, row) -> None:
-        if self.select_mode:
-            self.selection.toggle(row._assessment.pkg.uid)
-        else:
-            self.show_assessment(row._assessment)
+        self.show_assessment(row._assessment)
 
     def _sync_checks(self) -> None:
         for uid, check in self._checks.items():
