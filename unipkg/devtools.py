@@ -20,6 +20,11 @@ def capture(window: Gtk.Window, path: str) -> None:
     dialog = window.get_visible_dialog() if hasattr(window, "get_visible_dialog") else None
     if dialog is not None:
         _capture_widget(window, dialog, path.removesuffix(".png") + "-dialog.png")
+    # Open popovers are separate surfaces as well.
+    installed = getattr(window, "installed", None)
+    popover = installed.perm_button.get_popover() if installed else None
+    if popover is not None and popover.get_visible():
+        _capture_widget(window, popover, path.removesuffix(".png") + "-popover.png")
 
 
 def _capture_widget(window: Gtk.Window, widget: Gtk.Widget, path: str) -> None:
@@ -32,7 +37,7 @@ def _capture_widget(window: Gtk.Window, widget: Gtk.Widget, path: str) -> None:
     node = snapshot.to_node()
     if node is None:
         return
-    renderer = window.get_native().get_renderer()
+    renderer = widget.get_native().get_renderer()
     texture = renderer.render_texture(node, Graphene.Rect().init(0, 0, width, height))
     texture.save_to_png(path)
     print(f"[devtools] saved {path}")
@@ -91,7 +96,12 @@ def run_script(app, window) -> None:
             if dialog is not None:
                 dialog.force_close()
         elif cmd == "perm":
-            window.installed.perm_dd.set_selected(int(arg))
+            # perm:network,camera[;all]  or perm:sandboxed:network
+            sandbox, _, keys = arg.rpartition(":") if ":" in arg else ("any", "", arg)
+            window.installed.set_permission_filter({k for k in keys.split(",") if k},
+                                                   sandbox or "any")
+        elif cmd == "permpopup":
+            window.installed.perm_button.popup()
         elif cmd == "reverse":
             window.installed.sort_dir_btn.set_active(arg == "1")
         elif cmd == "size":

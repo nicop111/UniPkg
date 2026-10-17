@@ -374,3 +374,28 @@ class RunningAppTests(unittest.TestCase):
         out = 'error: cannot refresh "brave": snap "brave" has running apps (brave), pids: 1'
         self.assertIn("brave is still running", snap.running_apps_hint(out))
         self.assertIsNone(snap.running_apps_hint("error: network timeout"))
+
+
+class PermissionFilterTests(unittest.TestCase):
+    def _pkg(self, kind, perms):
+        from unipkg.models import Package, Permission, PermissionCategory as C
+
+        cats = {"network": C.NETWORK, "camera": C.CAMERA, "audio": C.AUDIO}
+        return Package(kind=kind, name="x", display_name="x", permissions=[
+            Permission(k, k, cats[k], True, sensitive=True) for k in perms])
+
+    def test_any_all_and_sandbox(self):
+        from unipkg.ui.installed import matches_permission_filter as match
+
+        net = self._pkg(PackageKind.FLATPAK, ["network"])
+        net_cam = self._pkg(PackageKind.FLATPAK, ["network", "camera"])
+        unconfined = self._pkg(PackageKind.APT, [])
+        self.assertTrue(match(net, "any", set(), False))
+        self.assertTrue(match(net, "any", {"network", "camera"}, False))     # any
+        self.assertFalse(match(net, "any", {"network", "camera"}, True))     # all
+        self.assertTrue(match(net_cam, "any", {"network", "camera"}, True))
+        self.assertFalse(match(net, "any", {"audio"}, False))
+        self.assertTrue(match(unconfined, "any", {"camera"}, True))         # unrestricted can do all
+        self.assertFalse(match(unconfined, "sandboxed", set(), False))
+        self.assertTrue(match(unconfined, "unrestricted", set(), False))
+        self.assertFalse(match(net, "unrestricted", {"network"}, False))

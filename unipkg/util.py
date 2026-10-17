@@ -122,6 +122,9 @@ def parse_date(text: str) -> Optional[float]:
         return None
 
 
+_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def format_date(epoch: Optional[float], now: Optional[float] = None) -> str:
     """Short, human friendly date: "Today", "Yesterday", "3 days ago" or "12 Oct 2026"."""
     if not epoch:
@@ -136,7 +139,7 @@ def format_date(epoch: Optional[float], now: Optional[float] = None) -> str:
         return "Yesterday"
     if 1 < delta < 7:
         return f"{delta} days ago"
-    return f"{day.day} {day.strftime('%b %Y')}"
+    return f"{day.day} {_MONTHS[day.month - 1]} {day.year}"
 
 
 def format_datetime(epoch: Optional[float]) -> str:

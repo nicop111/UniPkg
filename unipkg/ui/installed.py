@@ -16,10 +16,13 @@ SCOPES = [
     ("all", "All packages"),
 ]
 
+SANDBOX_FILTERS: list[tuple[str, str, Callable[[Package], bool]]] = [
+    ("any", "Any", lambda p: True),
+    ("sandboxed", "Sandboxed only", lambda p: p.permission_summary != "Unrestricted"),
+    ("unrestricted", "Unrestricted only (no sandbox)", lambda p: p.permission_summary == "Unrestricted"),
+]
+
 PERMISSION_FILTERS: list[tuple[str, str, Callable[[Package], bool]]] = [
-    ("any", "Any permissions", lambda p: True),
-    ("unrestricted", "Unrestricted (no sandbox)", lambda p: p.permission_summary == "Unrestricted"),
-    ("sandboxed", "Sandboxed", lambda p: p.permission_summary != "Unrestricted"),
     ("network", "Network access", lambda p: _has(p, PermissionCategory.NETWORK)),
     ("files", "Home / all files", lambda p: any(
         x.granted and x.sensitive and x.category == PermissionCategory.FILESYSTEM for x in p.permissions)),
@@ -44,6 +47,18 @@ SORT_KEYS = [
     ("size", "Size"),
     ("updated", "Last updated"),
 ]
+
+
+def matches_permission_filter(pkg: Package, sandbox: str, keys: set[str], match_all: bool) -> bool:
+    """Sandbox status must match; of the checked permissions the package needs
+    at least one (``match_all=False``) or every one (``match_all=True``)."""
+    for key, _label, func in SANDBOX_FILTERS:
+        if key == sandbox and not func(pkg):
+            return False
+    if not keys:
+        return True
+    results = [func(pkg) for key, _label, func in PERMISSION_FILTERS if key in keys]
+    return all(results) if match_all else any(results)
 
 
 def _has(pkg: Package, cat: PermissionCategory) -> bool:
@@ -99,7 +114,9 @@ class InstalledPage(Gtk.Box):
         self.kinds: set[PackageKind] = set(PackageKind)
         self.scope = "apps"
         self.source = ""
-        self.permission = "any"
+        self.sandbox_filter = "any"
+        self.permission_keys: set[str] = set()
+        self.permission_match_all = False
         self.query = ""
 
         # --- filter bar -------------------------------------------------
@@ -136,9 +153,10 @@ class InstalledPage(Gtk.Box):
         self.source_dd.connect("notify::selected", self._on_source)
         bar2.append(self.source_dd)
 
-        self.perm_dd = self._dropdown([label for _k, label, _f in PERMISSION_FILTERS], self._on_perm)
-        self.perm_dd.set_tooltip_text("Filter by permission")
-        bar2.append(self.perm_dd)
+        self.perm_button = Gtk.MenuButton(label="Any permissions", always_show_arrow=True,
+                                          tooltip_text="Filter by permission",
+                                          popover=self._build_permission_popover())
+        bar2.append(self.perm_button)
 
         sort_box = Gtk.Box(spacing=6)
         sort_box.append(Gtk.Label(label="Sort by"))
@@ -325,10 +343,9 @@ class InstalledPage(Gtk.Box):
                 return False
         if self.source and pkg.source != self.source:
             return False
-        if self.permission != "any":
-            for key, _label, func in PERMISSION_FILTERS:
-                if key == self.permission and not func(pkg):
-                    return False
+        if not matches_permission_filter(pkg, self.sandbox_filter, self.permission_keys,
+                                         self.permission_match_all):
+            return False
         if self.query:
             haystack = f"{pkg.display_name} {pkg.name} {pkg.developer} {pkg.summary}".lower()
             if not all(word in haystack for word in self.query.split()):
@@ -369,8 +386,97 @@ class InstalledPage(Gtk.Box):
         self.source = self._sources[idx] if 0 <= idx < len(self._sources) else ""
         self._refilter()
 
-    def _on_perm(self, dd, _pspec):
-        self.permission = PERMISSION_FILTERS[dd.get_selected()][0]
+    # permission filter popover -----------------------------------------------
+    def _build_permission_popover(self) -> Gtk.Popover:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=8,
+                      margin_bottom=8, margin_start=8, margin_end=8)
+
+        def heading(text: str) -> Gtk.Label:
+            label = Gtk.Label(label=text, xalign=0, margin_start=4, margin_top=4)
+            label.add_css_class("heading")
+            return label
+
+        box.append(heading("Sandbox"))
+        self._sandbox_checks: dict[str, Gtk.CheckButton] = {}
+        group = None
+        for key, label, _func in SANDBOX_FILTERS:
+            check = Gtk.CheckButton(label=label, active=key == "any", group=group)
+            group = group or check
+            check.connect("toggled", self._on_sandbox_toggled, key)
+            self._sandbox_checks[key] = check
+            box.append(check)
+
+        box.append(Gtk.Separator(margin_top=6, margin_bottom=2))
+        match_row = Gtk.Box(spacing=8, margin_start=4)
+        match_row.append(heading("Has access to"))
+        match_row.append(Gtk.Box(hexpand=True))
+        linked = Gtk.Box(valign=Gtk.Align.CENTER)
+        linked.add_css_class("linked")
+        self._match_any = Gtk.ToggleButton(label="Any", active=True,
+                                           tooltip_text="Show apps with at least one checked permission")
+        self._match_all = Gtk.ToggleButton(label="All", group=self._match_any,
+                                           tooltip_text="Show only apps with every checked permission")
+        for btn in (self._match_any, self._match_all):
+            btn.add_css_class("small-toggle")
+            linked.append(btn)
+        self._match_all.connect("toggled", self._on_match_toggled)
+        match_row.append(linked)
+        box.append(match_row)
+
+        self._permission_checks: dict[str, Gtk.CheckButton] = {}
+        for key, label, _func in PERMISSION_FILTERS:
+            check = Gtk.CheckButton(label=label)
+            check.connect("toggled", self._on_permission_check, key)
+            self._permission_checks[key] = check
+            box.append(check)
+
+        clear = Gtk.Button(label="Clear Filters", margin_top=6)
+        clear.add_css_class("flat")
+        clear.connect("clicked", lambda *_: self.clear_permission_filter())
+        box.append(clear)
+        return Gtk.Popover(child=box)
+
+    def _on_sandbox_toggled(self, check: Gtk.CheckButton, key: str) -> None:
+        if check.get_active():
+            self.sandbox_filter = key
+            self._permission_filter_changed()
+
+    def _on_match_toggled(self, btn: Gtk.ToggleButton) -> None:
+        self.permission_match_all = btn.get_active()
+        self._permission_filter_changed()
+
+    def _on_permission_check(self, check: Gtk.CheckButton, key: str) -> None:
+        if check.get_active():
+            self.permission_keys.add(key)
+        else:
+            self.permission_keys.discard(key)
+        self._permission_filter_changed()
+
+    def set_permission_filter(self, keys: set[str], sandbox: str = "any", match_all: bool = False) -> None:
+        self._sandbox_checks[sandbox].set_active(True)
+        (self._match_all if match_all else self._match_any).set_active(True)
+        for key, check in self._permission_checks.items():
+            check.set_active(key in keys)
+
+    def clear_permission_filter(self) -> None:
+        self.set_permission_filter(set())
+
+    def _permission_filter_changed(self) -> None:
+        labels = {k: l for k, l, _f in PERMISSION_FILTERS}
+        parts = []
+        if self.sandbox_filter == "sandboxed":
+            parts.append("Sandboxed")
+        elif self.sandbox_filter == "unrestricted":
+            parts.append("Unrestricted")
+        chosen = [labels[k] for k, _l, _f in PERMISSION_FILTERS if k in self.permission_keys]
+        if chosen:
+            text = chosen[0] if len(chosen) == 1 else f"{chosen[0]} {'&' if self.permission_match_all else 'or'} {len(chosen) - 1} more"
+            parts.append(text)
+        self.perm_button.set_label(" · ".join(parts) if parts else "Any permissions")
+        if parts:
+            self.perm_button.add_css_class("filter-active")
+        else:
+            self.perm_button.remove_css_class("filter-active")
         self._refilter()
 
     def _on_sort_choice(self, widget=None, *_args):
