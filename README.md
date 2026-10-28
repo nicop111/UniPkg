@@ -1,6 +1,6 @@
 # UniPkg — universal package manager
 
-UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak. It manages every kind of package on a Debian or Ubuntu system from one window:
+UniPkg is a GTK 4 / libadwaita application, shipped as a Flatpak or a Debian package. It manages every kind of package on a Debian or Ubuntu system from one window:
 
 | Format | Detected as | Backend |
 | --- | --- | --- |
@@ -52,7 +52,57 @@ Screenshots follow GitHub's light or dark theme.
 
 ## Installation
 
-UniPkg is not on Flathub or the Snap Store yet. You build the Flatpak yourself, which takes a few minutes and installs it for your user only. It runs on Debian, Ubuntu and their derivatives; other distributions lack APT.
+UniPkg is not on Flathub or the Snap Store yet. You build it yourself, either as a **Flatpak** (installed for your user only) or as a **Debian package** (installed system-wide, no sandbox). It runs on Debian, Ubuntu and their derivatives; other distributions lack APT.
+
+### Quick start with `just`
+
+The repository has a [`justfile`](justfile) with a recipe for every step. Install [just](https://github.com/casey/just) with `sudo apt install just`, then run `just` in the source folder to list the recipes:
+
+| Command | What it does |
+| --- | --- |
+| `just deps` | Install the libraries needed to run from source or from the Debian package (PyGObject, GTK 4, libadwaita) |
+| `just deps-flatpak` | Install `git`, `flatpak`, the Flathub remote, Flatpak Builder and the GNOME SDK (about 1 GB) |
+| `just run` | Run UniPkg straight from the source tree |
+| `just test` | Run the unit tests |
+| `just build` | Build both the Debian package and the Flatpak bundle |
+| `just build-deb` | Build `dist/unipkg_<version>_all.deb` |
+| `just build-flatpak` | Build the single-file bundle `unipkg.flatpak` without installing it |
+| `just install-deb` | Build and install the Debian package; running it again updates it |
+| `just update-deb` | `git pull`, then rebuild and reinstall the Debian package |
+| `just uninstall-deb` | Remove the Debian package |
+| `just install-flatpak` | Build and install the Flatpak for your user; running it again updates it |
+| `just update-flatpak` | `git pull`, then rebuild and reinstall the Flatpak |
+| `just uninstall-flatpak` | Remove the Flatpak and its data |
+| `just run-flatpak` | Start the installed Flatpak |
+| `just clean` | Delete all build output |
+
+For example, to install the Debian package:
+
+```sh
+git clone https://github.com/nicop111/UniPkg.git
+cd UniPkg
+just deps install-deb
+```
+
+Or the Flatpak: `just deps-flatpak install-flatpak`. After an update, quit UniPkg completely (Ctrl+Q) and start it again.
+
+The sections below describe the same steps without `just`.
+
+### Flatpak or Debian package?
+
+Both run the same code. The Flatpak brings its own GTK and libadwaita, so it also works on older releases, but its sandbox has to be opened up with `--talk-name=org.freedesktop.Flatpak` anyway (see [How it works inside the sandbox](#how-it-works-inside-the-sandbox)). The Debian package is small and uses the system's libraries, which means it needs libadwaita ≥ 1.6 (Debian 13, Ubuntu 24.10 or newer). UniPkg protects its own package from being removed through the app in both cases.
+
+### Debian package
+
+```sh
+sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
+./build-aux/build-deb.sh
+sudo apt install ./dist/unipkg_*_all.deb
+```
+
+To update, `git pull` and run the last two commands again. To uninstall: `sudo apt remove unipkg`.
+
+The rest of this section covers the Flatpak.
 
 ### 1. Install the build tools (once)
 
@@ -116,7 +166,7 @@ Without building the Flatpak you can run it straight from the source tree. This 
 
 ```sh
 sudo apt install python3-gi gir1.2-gtk-4.0 gir1.2-adw-1
-python3 -m unipkg
+python3 -m unipkg   # or: just run
 ```
 
 ## Features
@@ -195,7 +245,7 @@ The host needs the usual tools: `apt`, `dpkg`, `flatpak`, `snap`/`snapd` (each b
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests   # or: just test
 ```
 
 The UI can be exercised automatically. `UNIPKG_SCREENSHOT=/tmp/shot UNIPKG_SCRIPT="wait:10;shot:installed;page:explore;search:vlc;wait:8;compare:0;wait:8;shot:compare" python3 -m unipkg` renders PNG screenshots (see `unipkg/devtools.py`).
@@ -212,6 +262,8 @@ unipkg/
   backends/        apt.py (APT + local .deb), flatpak.py, snap.py, gpg.py
   ui/              window, installed list, details, explore/compare, updates, repositories, security
 data/              desktop file, AppStream metainfo, icon
+build-aux/         build-flatpak.sh, build-deb.sh, make-slideshow.py
+justfile           recipes for building, installing and running
 screenshots/       README screenshots (light/dark); build-aux/make-slideshow.py builds the slideshows
 io.github.unipkg.UniPkg.json   Flatpak manifest
 ```

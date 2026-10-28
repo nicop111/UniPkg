@@ -4,3 +4,5 @@ __pycache__/
 build-dir/
 repo/
 *.flatpak
+build-deb/
+dist/

@@ -58,6 +58,7 @@ CRITICAL_PACKAGES = {
     "curl": "Used by UniPkg to talk to snapd",
     "snapd": "Snap package system",
     "flatpak": "Flatpak package system (UniPkg runs on it)",
+    "unipkg": "UniPkg itself",
     "network-manager": "Network connections",
     "netplan.io": "Network configuration",
     "gnome-shell": "The desktop shell",
